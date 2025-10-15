@@ -1,0 +1,83 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "FreezeRay",
+  "logo": {
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
+  },
+  "favicon": "/favicon.svg",
+  "colors": {
+    "primary": "#2563EB",
+    "light": "#3B82F6",
+    "dark": "#1E40AF"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/schema-freezing",
+              "concepts/migration-testing",
+              "concepts/drift-detection"
+            ]
+          },
+          {
+            "group": "CLI Reference",
+            "pages": [
+              "cli/init",
+              "cli/freeze"
+            ]
+          },
+          {
+            "group": "Macro Reference",
+            "pages": [
+              "macros/freeze-schema"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Tutorials",
+            "pages": [
+              "guides/first-freeze",
+              "guides/testing-migrations",
+              "guides/ci-integration"
+            ]
+          }
+        ]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "GitHub",
+          "href": "https://github.com/TrinsicVentures/FreezeRay",
+          "icon": "github"
+        },
+        {
+          "anchor": "Community",
+          "href": "https://github.com/TrinsicVentures/FreezeRay/discussions",
+          "icon": "comments"
+        }
+      ]
+    }
+  },
+  "footerSocials": {
+    "github": "https://github.com/TrinsicVentures/FreezeRay"
+  }
+}

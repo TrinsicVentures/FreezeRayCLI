@@ -1,0 +1,108 @@
+---
+title: Installation
+description: 'Install FreezeRay CLI and Swift package'
+---
+
+# Installation
+
+FreezeRay consists of two components: the CLI tool and the Swift package. The CLI's `init` command handles adding the package for you.
+
+## Install CLI Tool
+
+Install via npm:
+
+```bash
+npm install -g @trinsicventures/freezeray
+```
+
+Verify installation:
+
+```bash
+freezeray --version
+```
+
+<Warning>
+  **Apple Silicon only:** The npm package contains a precompiled binary for Apple Silicon (ARM64) Macs. Intel Mac users must build from source.
+</Warning>
+
+### Alternative: Build from Source
+
+For Intel Macs or if you prefer to build from source:
+
+```bash
+git clone https://github.com/TrinsicVentures/FreezeRay.git
+cd FreezeRay
+swift build -c release
+cp .build/release/freezeray /usr/local/bin/
+```
+
+### Homebrew (Coming Soon)
+
+```bash
+brew install trinsic/tap/freezeray
+```
+
+## Initialize Your Project
+
+Run `init` in your Xcode project directory:
+
+```bash
+cd YourProject
+freezeray init
+```
+
+This will:
+1. Add FreezeRay package dependency to your `Package.swift`
+2. Create the `FreezeRay/` directory structure
+3. Set up `.gitignore` rules (if needed)
+
+<Info>
+  The init command automatically adds the FreezeRay package to your project. No need to manually edit `Package.swift`!
+</Info>
+
+## Manual Package Installation (Alternative)
+
+If you prefer to add the package manually:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/TrinsicVentures/FreezeRay.git", from: "0.4.0")
+]
+```
+
+Then add to your target:
+
+```swift
+.target(
+    name: "YourApp",
+    dependencies: ["FreezeRay"]
+)
+```
+
+## Verify Installation
+
+Check that everything is set up:
+
+```bash
+# Verify CLI
+freezeray --version
+
+# Verify package was added
+swift package show-dependencies | grep FreezeRay
+
+# Verify directory structure
+ls FreezeRay/
+```
+
+## System Requirements
+
+- macOS 14.0+
+- Xcode 15.0+
+- Swift 5.9+
+- iOS Simulator (for freezing operations)
+
+## Next Steps
+
+<Card title="Follow the Quickstart" icon="rocket" href="/quickstart">
+  Freeze your first schema in 5 minutes
+</Card>

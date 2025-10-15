@@ -1,0 +1,147 @@
+---
+title: Quickstart
+description: 'Freeze your first SwiftData schema in 5 minutes'
+---
+
+# Quickstart Guide
+
+This guide will walk you through freezing your first SwiftData schema with FreezeRay.
+
+## Prerequisites
+
+- Xcode 15.0+
+- Swift 5.9+
+- iOS 17+ or macOS 14+ project with SwiftData
+- Git repository (for tracking fixtures)
+- npm (for CLI installation)
+- Apple Silicon Mac (Intel users must build from source)
+
+## Install CLI
+
+Install the FreezeRay CLI via npm:
+
+```bash
+npm install -g @trinsicventures/freezeray
+```
+
+Verify installation:
+
+```bash
+freezeray --version
+```
+
+<Info>
+  The CLI automatically adds the FreezeRay Swift package to your project when you run `freezeray init`.
+</Info>
+
+## Initialize Your Project
+
+Navigate to your Xcode project directory and run:
+
+```bash
+cd YourProject
+freezeray init
+```
+
+This will:
+- Add FreezeRay package dependency to your `Package.swift`
+- Create the `FreezeRay/` directory structure
+- Set up `.gitignore` rules (if needed)
+
+## Annotate Your Schema
+
+Add `@FreezeSchema` to your schema definition:
+
+```swift
+import SwiftData
+import FreezeRay
+
+@FreezeSchema(version: "1.0.0")
+enum AppSchemaV1: VersionedSchema {
+    static var versionIdentifier = Schema.Version(1, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [User.self]
+    }
+
+    @Model
+    final class User {
+        var name: String
+        var email: String
+
+        init(name: String, email: String) {
+            self.name = name
+            self.email = email
+        }
+    }
+}
+```
+
+## Freeze Your Schema
+
+Run the freeze command:
+
+```bash
+freezeray freeze 1.0.0
+```
+
+This will:
+1. Build your project
+2. Run tests in iOS Simulator
+3. Extract schema fixtures to `FreezeRay/Fixtures/1.0.0/`
+4. Generate validation tests in `FreezeRay/Tests/`
+
+## Verify the Freeze
+
+Check that fixtures were created:
+
+```bash
+ls FreezeRay/Fixtures/1.0.0/
+```
+
+You should see:
+- `App-1_0_0.sqlite` - SQLite database with schema
+- `schema-1_0_0.json` - JSON representation
+- `export_metadata.txt` - Metadata about the freeze
+
+## Commit the Fixtures
+
+Commit the generated files to your repository:
+
+```bash
+git add FreezeRay/
+git commit -m "Freeze schema v1.0.0"
+```
+
+<Warning>
+  Always commit fixtures to your repository. They serve as the source of truth for schema validation.
+</Warning>
+
+## Run Tests
+
+The generated tests run automatically with your test suite:
+
+```bash
+xcodebuild test -scheme YourApp -destination 'platform=iOS Simulator,name=iPhone 15'
+```
+
+The tests will:
+- Verify the schema hasn't drifted from the frozen version
+- Validate that all models match the fixtures
+
+## Next Steps
+
+<Columns cols={2}>
+  <Card title="Learn Core Concepts" icon="book" href="/concepts/schema-freezing">
+    Understand how FreezeRay works under the hood
+  </Card>
+  <Card title="Test Migrations" icon="code-branch" href="/guides/testing-migrations">
+    Learn how to test schema migrations between versions
+  </Card>
+  <Card title="CI Integration" icon="github" href="/guides/ci-integration">
+    Set up FreezeRay in your CI pipeline
+  </Card>
+  <Card title="CLI Reference" icon="terminal" href="/cli/freeze">
+    Explore all CLI commands and options
+  </Card>
+</Columns>

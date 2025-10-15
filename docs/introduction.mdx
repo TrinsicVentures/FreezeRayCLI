@@ -1,0 +1,139 @@
+---
+title: Introduction
+description: 'Welcome to FreezeRay - SwiftData schema freezing and migration testing'
+---
+
+# Welcome to FreezeRay
+
+FreezeRay is a CLI tool and Swift macro package for freezing SwiftData schemas and validating migration paths. It prevents accidental schema changes from reaching production by creating immutable fixtures.
+
+## Key Features
+
+<Columns cols={2}>
+  <Card title="Schema Freezing" icon="snowflake">
+    Capture immutable snapshots of your SwiftData schemas
+  </Card>
+  <Card title="Migration Testing" icon="code-branch">
+    Automatically test all migration paths between schema versions
+  </Card>
+  <Card title="Drift Detection" icon="triangle-exclamation">
+    Detect accidental schema changes before they reach production
+  </Card>
+  <Card title="CLI + Macros" icon="terminal">
+    Hybrid approach: CLI for freezing, macros for type-safe validation
+  </Card>
+</Columns>
+
+## Quick Start
+
+Get started with FreezeRay in under 5 minutes:
+
+<Steps>
+  <Step title="Install FreezeRay">
+    Add FreezeRay to your project via Swift Package Manager
+  </Step>
+  <Step title="Annotate your schema">
+    Add `@FreezeSchema(version: "1.0.0")` to your schema
+  </Step>
+  <Step title="Freeze your schema">
+    Run `freezeray freeze 1.0.0` to create fixtures
+  </Step>
+  <Step title="Run tests">
+    Generated tests validate schema integrity automatically
+  </Step>
+</Steps>
+
+## The Problems FreezeRay Solves
+
+### 1. Inscrutable Error Messages
+
+SwiftData crashes with cryptic errors that are hard to diagnose:
+
+```
+Cannot use staged migration with an unknown model version
+```
+
+```
+Persistent store migration failed, missing source managed object model
+```
+
+**Root causes:**
+- Accidentally modifying shipped schema versions
+- Not including all models from previous schemas
+- Changing schema between builds
+
+**How FreezeRay helps:** Checksum-based drift detection catches schema changes BEFORE they cause SwiftData crashes, giving you clear, actionable messages:
+
+```
+❌ Schema drift detected in sealed version 1.0.0
+Expected checksum: 0cc298858e409d8b...
+Actual checksum:   26d70c10e9febf7f...
+→ Sealed schemas are immutable - create a new schema version instead.
+```
+
+### 2. Production Crashes (Not Caught in Testing)
+
+**The silent killer:** Fresh installs work fine in testing, existing users crash on app launch.
+
+When you modify a shipped `VersionedSchema`, SwiftData's internal hash no longer matches. Fresh simulator tests don't catch this—they skip migration entirely and install the current schema from scratch. But real users with existing databases crash immediately.
+
+**How FreezeRay helps:** Frozen fixtures are real SQLite databases from shipped versions. Migration tests actually load these databases and attempt migration, forcing any crashes to happen in your test suite instead of production:
+
+```swift
+@Test func testMigrateV1toV2() throws {
+    // Loads the REAL v1.0.0 database and attempts migration
+    try FreezeRayRuntime.testMigration(
+        from: AppSchemaV1.self,
+        to: AppSchemaV2.self,
+        migrationPlan: AppMigrations.self
+    )
+}
+```
+
+If your migration is broken, you get the crash in tests where you can debug it.
+
+### 3. Silent Data Loss
+
+**The worst kind of bug:** Migration succeeds without errors or crashes, but data is corrupted or lost.
+
+- Non-optional properties added without defaults → undefined behavior
+- Transformable properties that change shape → old data fails to decode, becomes nil
+- Properties removed → user data silently dropped
+- Type conversions fail silently
+
+**How FreezeRay helps:** Scaffolded migration tests let you add custom validation to check data integrity:
+
+```swift
+@Test func testMigrateV1toV2() throws {
+    try FreezeRayRuntime.testMigration(
+        from: AppSchemaV1.self,
+        to: AppSchemaV2.self,
+        migrationPlan: AppMigrations.self
+    )
+
+    // TODO: Verify record counts match
+    // TODO: Check required fields preserved
+    // TODO: Validate relationships intact
+}
+```
+
+## Layered Defense
+
+FreezeRay provides three layers of protection:
+
+1. **Checksums** (fast, clear errors) - Catches drift before SwiftData crashes
+2. **Real migration tests** (forces crashes in tests) - Better to crash in CI than production
+3. **Custom validation** (user-defined) - Ensures data integrity after migration
+
+## Architecture
+
+FreezeRay uses a hybrid CLI + macro approach:
+
+1. **CLI tool** orchestrates schema freezing in iOS Simulator
+2. **Swift macros** provide type-safe schema annotations
+3. **Generated tests** validate schema integrity and migrations
+4. **Fixtures** are committed to your repo for full traceability
+
+<Card title="Ready to get started?" icon="rocket" href="/quickstart">
+  Follow our quickstart guide to freeze your first schema
+</Card>
