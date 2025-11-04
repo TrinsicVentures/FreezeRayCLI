@@ -18,6 +18,29 @@ set -e
 
 echo "📦 Publishing FreezeRay CLI to npm..."
 
+# Version sync check
+echo "🔍 Checking version sync..."
+CLI_VERSION=$(grep 'version:' Sources/freezeray-cli/CLI.swift | sed -E 's/.*version: "([0-9.]+)".*/\1/')
+NPM_VERSION=$(grep '"version"' release/npm/package.json | sed -E 's/.*"version": "([0-9.]+)".*/\1/')
+
+if [ "$CLI_VERSION" != "$NPM_VERSION" ]; then
+  echo "❌ ERROR: Version mismatch!"
+  echo "   CLI.swift: $CLI_VERSION"
+  echo "   package.json: $NPM_VERSION"
+  echo ""
+  echo "Update versions in:"
+  echo "  - Sources/freezeray-cli/CLI.swift"
+  echo "  - Sources/freezeray-cli/Commands/FreezeCommand.swift"
+  echo "  - release/npm/package.json"
+  exit 1
+fi
+
+echo "✅ Versions synced: v$CLI_VERSION"
+echo ""
+echo "⚠️  REMINDER: After publishing, tag FreezeRayPkg at v$CLI_VERSION for version sync"
+echo "   cd ../FreezeRayPkg && git tag v$CLI_VERSION -m 'Version sync with FreezeRayCLI v$CLI_VERSION'"
+echo ""
+
 # Copy binary to npm release folder
 mkdir -p release/npm/bin
 cp .build/release/freezeray release/npm/bin/freezeray
