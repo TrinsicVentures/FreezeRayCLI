@@ -5,4 +5,446 @@ description: 'Detecting accidental schema changes'
 
 # Drift Detection
 
-Documentation coming soon.
+Drift detection catches accidental modifications to frozen schemas **before** they cause SwiftData crashes in production. It's your first line of defense against schema-related bugs.
+
+## What is Schema Drift?
+
+Schema drift occurs when you accidentally modify a schema version that's already been frozen and shipped:
+
+```swift
+// Original frozen v1.0.0
+@FreezeSchema(version: "1.0.0")
+enum AppSchemaV1: VersionedSchema {
+    static var models: [any PersistentModel.Type] {
+        [User.self]
+    }
+}
+
+// ❌ Later: You modify it (DRIFT!)
+@FreezeSchema(version: "1.0.0")
+enum AppSchemaV1: VersionedSchema {
+    static var models: [any PersistentModel.Type] {
+        [User.self, Post.self]  // Added Post!
+    }
+}
+```
+
+This change breaks SwiftData's migration system because the internal hash no longer matches the shipped version.
+
+## Why Drift is Dangerous
+
+### SwiftData's Internal Hashing
+
+SwiftData generates internal hashes for each schema version. When a user opens your app:
+
+1. SwiftData reads the existing database
+2. Compares the stored schema hash with current schema hash
+3. If hashes match → no migration needed
+4. If hashes don't match → trigger migration
+
+**The problem:** If you modify a shipped schema, the hash changes, but SwiftData thinks it's still v1.0.0. Result:
+
+```
+Cannot use staged migration with an unknown model version
+```
+
+### Fresh Installs Hide the Problem
+
+Your simulator tests won't catch this:
+
+```swift
+// Simulator (fresh install):
+// 1. No existing database
+// 2. SwiftData creates NEW database with current (modified) schema
+// 3. No hash comparison happens
+// ✅ Test passes
+
+// Production user (existing database):
+// 1. Database has original v1.0.0 hash
+// 2. SwiftData compares with modified v1.0.0 hash
+// 3. Hashes don't match → migration fails
+// ❌ App crashes on launch
+```
+
+## How Drift Detection Works
+
+### 1. Checksum Generation
+
+When you freeze a schema, FreezeRay generates a SHA256 checksum of the schema structure:
+
+```bash
+freezeray freeze 1.0.0
+# Creates: FreezeRay/Fixtures/1.0.0/schema-1_0_0.json
+```
+
+```json
+{
+  "version": "1.0.0",
+  "checksum": "0cc298858e409d8b9c7e37a7779af0e2",
+  "models": [ /* ... */ ]
+}
+```
+
+This checksum is stored in both:
+- The JSON fixture file
+- The Swift code (via macro expansion)
+
+### 2. Drift Test Generation
+
+FreezeRay scaffolds a drift test that runs on every test suite execution:
+
+```swift
+// AUTO-GENERATED: FreezeRay/Tests/AppSchemaV1_DriftTests.swift
+
+@Test("AppSchemaV1 v1.0.0 has not drifted")
+func testAppSchemaV1_1_0_0_Drift() throws {
+    // Calls the macro-generated check function
+    try AppSchemaV1.__freezeray_check_1_0_0()
+}
+```
+
+### 3. Checksum Comparison
+
+The `__freezeray_check_1_0_0()` function:
+
+1. Computes current schema checksum
+2. Compares with frozen checksum
+3. Throws descriptive error if they don't match
+
+```swift
+// Macro-generated code (simplified)
+extension AppSchemaV1 {
+    static func __freezeray_check_1_0_0() throws {
+        let frozen = "0cc298858e409d8b9c7e37a7779af0e2"
+        let current = computeChecksum()
+
+        guard current == frozen else {
+            throw DriftError(
+                version: "1.0.0",
+                expected: frozen,
+                actual: current
+            )
+        }
+    }
+}
+```
+
+### 4. Clear Error Messages
+
+When drift is detected, you get an actionable error:
+
+```
+❌ Schema drift detected in sealed version 1.0.0
+
+Expected checksum: 0cc298858e409d8b9c7e37a7779af0e2
+Actual checksum:   26d70c10e9febf7f8c5a9e3d4b2a1f0e
+
+→ Sealed schemas are immutable - create a new schema version instead.
+
+To fix:
+  1. Revert changes to AppSchemaV1
+  2. Create AppSchemaV2 with your new models
+  3. Add migration: AppSchemaV1 → AppSchemaV2
+  4. Freeze v2.0.0: freezeray freeze 2.0.0
+```
+
+## What Triggers Drift Detection
+
+Drift is detected when you change **any** part of a frozen schema:
+
+### Adding Models
+
+```swift
+@FreezeSchema(version: "1.0.0")
+enum AppSchemaV1: VersionedSchema {
+    static var models: [any PersistentModel.Type] {
+        [User.self, Post.self]  // ❌ Added Post
+    }
+}
+```
+
+### Removing Models
+
+```swift
+@FreezeSchema(version: "1.0.0")
+enum AppSchemaV1: VersionedSchema {
+    static var models: [any PersistentModel.Type] {
+        // ❌ Removed User
+        [Post.self]
+    }
+}
+```
+
+### Modifying Model Properties
+
+```swift
+// Inside AppSchemaV1
+@Model
+final class User {
+    var name: String
+    var email: String
+    var age: Int  // ❌ Added property
+}
+```
+
+### Changing Property Types
+
+```swift
+@Model
+final class User {
+    var name: String
+    var email: Int  // ❌ Changed String → Int
+}
+```
+
+### Modifying Relationships
+
+```swift
+@Model
+final class User {
+    var name: String
+    @Relationship(deleteRule: .cascade)  // ❌ Added relationship
+    var posts: [Post]
+}
+```
+
+### Changing Attributes
+
+```swift
+@Model
+final class User {
+    @Attribute(.unique)  // ❌ Added unique constraint
+    var email: String
+}
+```
+
+## Running Drift Tests
+
+### Local Development
+
+Drift tests run automatically with your test suite:
+
+```bash
+# Run all tests (including drift tests)
+xcodebuild test -scheme MyApp \
+  -destination 'platform=iOS Simulator,name=iPhone 15'
+
+# Or via Xcode: ⌘U
+```
+
+### Continuous Integration
+
+Add drift detection to your CI pipeline:
+
+```yaml
+# .github/workflows/test.yml
+name: Test
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run Tests (includes drift detection)
+        run: |
+          xcodebuild test \
+            -scheme MyApp \
+            -destination 'platform=iOS Simulator,name=iPhone 15'
+```
+
+Any PR that modifies a frozen schema will fail CI.
+
+## Fixing Drift
+
+### Step 1: Identify the Drift
+
+Run tests to see which schema drifted:
+
+```bash
+xcodebuild test -scheme MyApp
+
+# Output:
+❌ Schema drift detected in sealed version 1.0.0
+Expected checksum: 0cc298858e409d8b...
+Actual checksum:   26d70c10e9febf7f...
+```
+
+### Step 2: Revert Changes
+
+Undo modifications to the frozen schema:
+
+```bash
+git diff  # See what changed
+git checkout AppSchemaV1.swift  # Revert
+```
+
+### Step 3: Create New Version
+
+Create a new schema version with your changes:
+
+```swift
+// Keep V1 unchanged
+@FreezeSchema(version: "1.0.0")
+enum AppSchemaV1: VersionedSchema {
+    static var models: [any PersistentModel.Type] {
+        [User.self]  // Original models only
+    }
+}
+
+// New V2 with your changes
+@FreezeSchema(version: "2.0.0")
+enum AppSchemaV2: VersionedSchema {
+    static var versionIdentifier = Schema.Version(2, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [User.self, Post.self]  // Now includes Post
+    }
+}
+```
+
+### Step 4: Add Migration
+
+Define how to migrate from V1 → V2:
+
+```swift
+enum AppMigrations: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] {
+        [AppSchemaV1.self, AppSchemaV2.self]
+    }
+
+    static var stages: [MigrationStage] {
+        [migrateV1toV2]
+    }
+
+    static let migrateV1toV2 = MigrationStage.lightweight(
+        fromVersion: AppSchemaV1.self,
+        toVersion: AppSchemaV2.self
+    )
+}
+```
+
+### Step 5: Freeze New Version
+
+```bash
+freezeray freeze 2.0.0
+git add FreezeRay/
+git commit -m "Add schema v2.0.0 with Post model"
+```
+
+## Best Practices
+
+<Warning>
+**Never use --force to overwrite fixtures.** It defeats the purpose of drift detection.
+</Warning>
+
+### Run Tests Before Every Commit
+
+```bash
+# Pre-commit hook (.git/hooks/pre-commit)
+#!/bin/bash
+xcodebuild test -scheme MyApp -destination 'platform=iOS Simulator,name=iPhone 15'
+if [ $? -ne 0 ]; then
+    echo "Tests failed (possible schema drift detected)"
+    exit 1
+fi
+```
+
+### Fail Fast in CI
+
+Configure CI to fail immediately on drift:
+
+```yaml
+- name: Drift Detection
+  run: xcodebuild test -scheme MyApp -only-testing:MyAppTests/DriftTests
+```
+
+### Use Type Aliases
+
+Type aliases help prevent accidental modifications:
+
+```swift
+// In your app code, use type aliases
+typealias User = DataV2.User
+
+// If you need to modify User:
+// 1. Create DataV3.User (new schema)
+// 2. Update typealias: typealias User = DataV3.User
+// 3. DataV2.User remains unchanged
+```
+
+## Edge Cases
+
+### Intentional Schema Updates (Dev Only)
+
+During development, you might want to update an unfrozen schema:
+
+```swift
+// V2 not frozen yet - safe to modify
+@FreezeSchema(version: "2.0.0")
+enum AppSchemaV2: VersionedSchema { /* ... */ }
+```
+
+**No drift test exists yet**, so modifications won't trigger errors. Once you freeze it, the schema becomes immutable.
+
+### Force Overwriting (Last Resort)
+
+If you absolutely must refreeze (e.g., fixtures corrupted):
+
+```bash
+freezeray freeze 1.0.0 --force
+```
+
+<Warning>
+Only use `--force` if you haven't shipped v1.0.0 to production. Otherwise, you'll break existing users.
+</Warning>
+
+## Troubleshooting
+
+### False Positives
+
+**Symptom:** Drift detected but schema hasn't changed
+
+**Causes:**
+- File encoding changes (LF vs CRLF)
+- Whitespace differences
+- Comment changes
+
+**Fix:**
+Drift detection only looks at semantic structure, not formatting. If you get false positives, file a bug report.
+
+### Drift Not Detected
+
+**Symptom:** Modified frozen schema but tests pass
+
+**Causes:**
+- Drift test not added to test target
+- Test file not committed to git
+- Test target not building
+
+**Fix:**
+```bash
+# Verify drift test exists
+ls FreezeRay/Tests/*_DriftTests.swift
+
+# Verify test target includes drift tests
+xcodebuild -showBuildSettings -scheme MyApp | grep TEST_HOST
+```
+
+## Next Steps
+
+<Columns cols={2}>
+  <Card title="Schema Freezing" icon="snowflake" href="/concepts/schema-freezing">
+    Learn how to freeze schemas and generate checksums
+  </Card>
+  <Card title="Migration Testing" icon="code-branch" href="/concepts/migration-testing">
+    Test migrations after detecting drift
+  </Card>
+  <Card title="CI Integration" icon="github" href="/guides/ci-integration">
+    Automate drift detection in your CI pipeline
+  </Card>
+  <Card title="First Freeze" icon="rocket" href="/guides/first-freeze">
+    Start using drift detection in your project
+  </Card>
+</Columns>

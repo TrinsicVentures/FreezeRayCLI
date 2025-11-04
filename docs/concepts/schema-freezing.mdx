@@ -5,4 +5,321 @@ description: 'Understanding how FreezeRay captures immutable schema snapshots'
 
 # Schema Freezing
 
-Documentation coming soon.
+Schema freezing is the process of creating immutable snapshots of your SwiftData schemas at specific versions. These snapshots serve as the source of truth for detecting schema drift and testing migrations.
+
+## What is Schema Freezing?
+
+When you "freeze" a schema, FreezeRay creates a permanent record of your database structure at that moment in time. This record includes:
+
+- **SQLite database**: A real database file with the exact schema structure
+- **JSON representation**: Human-readable schema metadata
+- **SHA256 checksum**: A cryptographic hash for drift detection
+- **Export metadata**: Timestamp and version information
+
+Think of it like `package-lock.json` for your database schema - you know exactly what structure shipped with each version.
+
+## Why Freeze Schemas?
+
+### The Problem: SwiftData's Hidden Dangers
+
+SwiftData uses internal hashes to match schemas. If you modify a shipped `VersionedSchema`:
+
+```swift
+// ❌ DANGER: You modified this after shipping v1
+enum AppSchemaV1: VersionedSchema {
+    static var models: [any PersistentModel.Type] {
+        [User.self, NewModel.self] // Added NewModel after shipping!
+    }
+}
+```
+
+**What happens:**
+1. Fresh installs work fine (no migration needed)
+2. Your simulator tests pass (fresh installs)
+3. Production users with existing databases **crash on launch**
+
+SwiftData's error messages are cryptic:
+
+```
+Cannot use staged migration with an unknown model version
+Persistent store migration failed, missing source managed object model
+```
+
+### The Solution: Frozen Fixtures
+
+FreezeRay captures the **actual database** from each shipped version:
+
+```
+FreezeRay/Fixtures/
+├── 1.0.0/
+│   ├── App-1_0_0.sqlite       # Real v1.0.0 database
+│   ├── schema-1_0_0.json      # Human-readable schema
+│   └── export_metadata.txt    # Freeze metadata
+└── 2.0.0/
+    ├── App-2_0_0.sqlite       # Real v2.0.0 database
+    ├── schema-2_0_0.json
+    └── export_metadata.txt
+```
+
+These fixtures enable:
+- **Drift detection**: Checksum comparison catches accidental changes
+- **Migration testing**: Load real v1.0.0 database and test migration to v2.0.0
+- **Audit trail**: Git history shows exactly what shipped
+
+## How Freezing Works
+
+### 1. Annotate Your Schema
+
+Add the `@FreezeSchema` macro with a version string:
+
+```swift
+import SwiftData
+import FreezeRay
+
+@FreezeSchema(version: "1.0.0")
+enum AppSchemaV1: VersionedSchema {
+    static var versionIdentifier = Schema.Version(1, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [User.self]
+    }
+
+    @Model
+    final class User {
+        var name: String
+        var email: String
+    }
+}
+```
+
+<Info>
+The `@FreezeSchema(version:)` string is used by FreezeRay for fixture organization. It's separate from SwiftData's `versionIdentifier`.
+</Info>
+
+The macro generates:
+- `__freezeray_freeze_1_0_0()` - Exports schema to SQLite
+- `__freezeray_check_1_0_0()` - Verifies checksum matches frozen version
+
+### 2. Run the Freeze Command
+
+```bash
+freezeray freeze 1.0.0
+```
+
+**What happens:**
+1. CLI auto-discovers your project (no config file needed)
+2. Parses source files to find `@FreezeSchema(version: "1.0.0")`
+3. Builds your project
+4. Runs tests in iOS Simulator
+5. Calls the macro-generated freeze function
+6. Extracts SQLite files from simulator container
+7. Generates SHA256 checksums
+8. Creates scaffolded tests for drift detection
+9. Copies fixtures to `FreezeRay/Fixtures/1.0.0/`
+
+<Info>
+FreezeRay uses SwiftSyntax to automatically discover schemas. No manual configuration needed!
+</Info>
+
+### 3. Commit to Git
+
+```bash
+git add FreezeRay/
+git commit -m "Freeze schema v1.0.0"
+```
+
+Now your schema is **permanently frozen**. Any changes trigger drift detection.
+
+## Fixture Anatomy
+
+### SQLite Database (`App-1_0_0.sqlite`)
+
+A real SQLite database with your schema structure:
+
+```sql
+-- Actual schema captured from iOS Simulator
+CREATE TABLE ZUSER (
+    Z_PK INTEGER PRIMARY KEY,
+    Z_ENT INTEGER,
+    Z_OPT INTEGER,
+    ZNAME VARCHAR,
+    ZEMAIL VARCHAR
+);
+
+CREATE TABLE Z_PRIMARYKEY (
+    Z_ENT INTEGER PRIMARY KEY,
+    Z_NAME VARCHAR,
+    Z_SUPER INTEGER,
+    Z_MAX INTEGER
+);
+
+-- ... and more SwiftData metadata tables
+```
+
+### JSON Schema (`schema-1_0_0.json`)
+
+Human-readable representation:
+
+```json
+{
+  "version": "1.0.0",
+  "models": [
+    {
+      "name": "User",
+      "properties": [
+        { "name": "name", "type": "String" },
+        { "name": "email", "type": "String" }
+      ]
+    }
+  ],
+  "checksum": "0cc298858e409d8b9c7e37a7779af0e2"
+}
+```
+
+### Export Metadata (`export_metadata.txt`)
+
+Freeze details:
+
+```
+Freeze Date: 2025-11-04T12:34:56Z
+Version: 1.0.0
+Schema: AppSchemaV1
+Models: User
+Checksum: 0cc298858e409d8b9c7e37a7779af0e2
+```
+
+## When to Freeze
+
+### Required: Before Major Schema Changes
+
+Freeze before releasing a new schema version to production:
+
+```bash
+# Shipping schema V2 with breaking changes
+freezeray freeze 2.0.0
+git add FreezeRay/
+git commit -m "Freeze schema v2.0.0 for App Store release"
+```
+
+### Optional: During Development
+
+Freeze interim versions for testing:
+
+```bash
+# Testing a new schema locally
+freezeray freeze 2.0.0-beta.1
+```
+
+### Not Required: Every Commit
+
+Don't freeze on every schema change - only when you want to **seal** a version as immutable.
+
+## Schema Version Numbering
+
+### Schema Versions ≠ App Versions
+
+Schema versions are **independent** from app versions:
+
+```swift
+// App version 1.0.0 might ship with schema V1
+// App version 1.5.0 might STILL use schema V1 (no schema changes)
+// App version 2.0.0 might introduce schema V2
+```
+
+### Common Patterns
+
+**Incremental (Simplest):**
+```swift
+@FreezeSchema(version: "1")
+enum AppSchemaV1: VersionedSchema {
+    static var versionIdentifier = Schema.Version(1, 0, 0)
+}
+
+@FreezeSchema(version: "2")
+enum AppSchemaV2: VersionedSchema {
+    static var versionIdentifier = Schema.Version(2, 0, 0)
+}
+```
+
+**Semantic Versioning (More Descriptive):**
+```swift
+@FreezeSchema(version: "1.0.0")
+enum AppSchemaV1: VersionedSchema {
+    static var versionIdentifier = Schema.Version(1, 0, 0)
+}
+
+@FreezeSchema(version: "2.0.0")
+enum AppSchemaV2: VersionedSchema {
+    static var versionIdentifier = Schema.Version(2, 0, 0)
+}
+```
+
+**Date-based (Time-ordered):**
+```swift
+@FreezeSchema(version: "2024-01-15")
+enum AppSchemaV1: VersionedSchema {
+    static var versionIdentifier = Schema.Version(1, 0, 0)
+}
+```
+
+<Info>
+Choose a versioning scheme that makes sense for your team. FreezeRay doesn't enforce any specific format.
+</Info>
+
+## Best Practices
+
+<Warning>
+**Never modify frozen schemas.** If you need changes, create a new version (AppSchemaV2).
+</Warning>
+
+<Warning>
+**Always include ALL models in each schema version.** Missing models cause "unknown model version" errors.
+</Warning>
+
+### Migration Plan Structure
+
+Keep your migration plan synchronized with frozen schemas:
+
+```swift
+enum AppMigrations: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] {
+        [AppSchemaV1.self, AppSchemaV2.self, AppSchemaV3.self]
+    }
+
+    static var stages: [MigrationStage] {
+        [migrateV1toV2, migrateV2toV3]
+    }
+}
+```
+
+### Type Aliases for Current Schema
+
+Use type aliases to reference the current version throughout your app:
+
+```swift
+// In your models file
+typealias User = DataV3.User
+typealias Post = DataV3.Post
+
+// In your app code
+@Query var users: [User]  // Uses current version
+```
+
+When you create V4, just update the typealias - no need to change app code.
+
+## Next Steps
+
+<Columns cols={2}>
+  <Card title="Drift Detection" icon="triangle-exclamation" href="/concepts/drift-detection">
+    Learn how checksums catch accidental schema changes
+  </Card>
+  <Card title="Migration Testing" icon="code-branch" href="/concepts/migration-testing">
+    Test migrations between frozen versions
+  </Card>
+  <Card title="First Freeze Guide" icon="snowflake" href="/guides/first-freeze">
+    Step-by-step tutorial for your first freeze
+  </Card>
+  <Card title="@FreezeSchema Macro" icon="code" href="/macros/freeze-schema">
+    Macro reference and generated code
+  </Card>
+</Columns>

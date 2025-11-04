@@ -5,4 +5,231 @@ description: 'Initialize FreezeRay in your project'
 
 # freezeray init
 
-Documentation coming soon.
+Initialize FreezeRay in your project by creating directory structure and adding the package dependency.
+
+## Synopsis
+
+```bash
+freezeray init [OPTIONS]
+```
+
+## Description
+
+The `init` command sets up FreezeRay in your project:
+
+1. **Detects project type** (Swift Package or Xcode Project)
+2. **Creates directory structure** (`FreezeRay/Fixtures/` and `FreezeRay/Tests/`)
+3. **Adds FreezeRay package dependency** to Package.swift or Xcode project
+
+Run this command once when you first add FreezeRay to your project.
+
+## Usage
+
+### Swift Package
+
+```bash
+cd YourSwiftPackage
+freezeray init
+```
+
+**What it does:**
+- Creates `FreezeRay/` directory structure
+- Adds dependency to `Package.swift`:
+  ```swift
+  dependencies: [
+      .package(url: "https://github.com/TrinsicVentures/FreezeRay.git", from: "0.4.0"),
+  ]
+  ```
+
+### Xcode Project
+
+```bash
+cd YourXcodeProject
+freezeray init
+```
+
+**What it does:**
+- Creates `FreezeRay/` directory structure
+- Adds FreezeRay package to Xcode project
+- Adds `FreezeRay/` folder reference to project navigator (yellow folder)
+
+## Options
+
+### `--package-path <PATH>`
+
+Specify path to FreezeRay package (for local development):
+
+```bash
+freezeray init --package-path /path/to/FreezeRay
+```
+
+**Use case:** Testing local changes to FreezeRay package.
+
+**Default:** Uses GitHub release (`https://github.com/TrinsicVentures/FreezeRay.git`)
+
+### `--skip-dependency`
+
+Skip adding FreezeRay dependency (only create directory structure):
+
+```bash
+freezeray init --skip-dependency
+```
+
+**Use case:** You want to manually add the dependency or use a different version.
+
+## Directory Structure
+
+After running `init`, your project will have:
+
+```
+YourProject/
+├── FreezeRay/
+│   ├── Fixtures/         # Schema fixtures (created by freeze command)
+│   ├── Tests/            # Scaffolded tests (created by freeze command)
+│   └── README.md         # Usage guide
+├── Package.swift         # (SPM) Updated with FreezeRay dependency
+└── YourProject.xcodeproj # (Xcode) Updated with FreezeRay package
+```
+
+The `FreezeRay/` directory is initially empty. It will be populated when you run `freezeray freeze`.
+
+## Examples
+
+### Basic initialization
+
+```bash
+cd MyApp
+freezeray init
+```
+
+**Output:**
+```
+🔹 FreezeRay Init
+
+🔹 Detecting project type...
+   Type: Xcode Project
+
+🔹 Creating directory structure...
+   ✅ Created FreezeRay/Fixtures/
+   ✅ Created FreezeRay/Tests/
+
+🔹 Adding FreezeRay dependency...
+   ✅ Added FreezeRay package to Xcode project
+   ✅ Added FreezeRay/ folder to project navigator
+
+✅ FreezeRay initialized successfully!
+
+📝 Next steps:
+   1. Add @FreezeSchema(version: "1.0.0") to your schema
+   2. Run: freezeray freeze 1.0.0
+   3. Commit: git add FreezeRay/
+```
+
+### Skip dependency installation
+
+```bash
+freezeray init --skip-dependency
+```
+
+Use this if you want to add the package manually through Xcode's UI.
+
+### Local package development
+
+```bash
+freezeray init --package-path ../FreezeRay
+```
+
+Points to a local clone of FreezeRay for testing changes.
+
+## Requirements
+
+- **macOS 14+**
+- **Xcode 15+** (for Xcode projects)
+- **Swift 5.9+**
+- Run from project root directory containing:
+  - `Package.swift` (for Swift Packages), or
+  - `*.xcodeproj` (for Xcode Projects)
+
+## Error Messages
+
+### "No Swift Package or Xcode project found"
+
+**Cause:** Not running from project root directory
+
+**Fix:**
+```bash
+cd YourProjectRoot  # Directory with Package.swift or *.xcodeproj
+freezeray init
+```
+
+### "FreezeRay dependency already exists"
+
+**Cause:** FreezeRay is already added to your project
+
+**Solution:** This is fine! The init command is idempotent. Directory structure will be created if missing.
+
+### "Could not modify Package.swift"
+
+**Cause:** Package.swift has unusual formatting
+
+**Fix:**
+Manually add FreezeRay to your `Package.swift`:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/TrinsicVentures/FreezeRay.git", from: "1.0.0"),
+],
+targets: [
+    .target(
+        name: "YourTarget",
+        dependencies: ["FreezeRay"]
+    ),
+]
+```
+
+### "Could not modify Xcode project"
+
+**Cause:** Xcode project format issue or permissions
+
+**Fix:**
+Manually add FreezeRay in Xcode:
+1. File → Add Package Dependencies...
+2. Enter: `https://github.com/TrinsicVentures/FreezeRay.git`
+3. Select version 1.0.0 or later
+4. Add to your main app target
+
+## Next Steps
+
+After initializing FreezeRay:
+
+<Steps>
+  <Step title="Annotate your schema">
+    Add `@FreezeSchema(version: "1.0.0")` to your `VersionedSchema`
+  </Step>
+  <Step title="Freeze your schema">
+    Run `freezeray freeze 1.0.0` to create fixtures
+  </Step>
+  <Step title="Commit fixtures">
+    Run `git add FreezeRay/` and commit to your repository
+  </Step>
+  <Step title="Run tests">
+    Press ⌘U in Xcode to run drift and migration tests
+  </Step>
+</Steps>
+
+## See Also
+
+<Columns cols={2}>
+  <Card title="freezeray freeze" icon="snowflake" href="/cli/freeze">
+    Freeze a schema version
+  </Card>
+  <Card title="First Freeze Guide" icon="rocket" href="/guides/first-freeze">
+    Complete tutorial for your first freeze
+  </Card>
+  <Card title="@FreezeSchema Macro" icon="code" href="/macros/freeze-schema">
+    Learn about the @FreezeSchema annotation
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Install the FreezeRay CLI
+  </Card>
+</Columns>
