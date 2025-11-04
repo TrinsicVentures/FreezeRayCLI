@@ -310,6 +310,11 @@ extension FreezeCommand {
         let testTargetDir = workingDir.appendingPathComponent(testTarget)
         let testFilePath = testTargetDir.appendingPathComponent("FreezeSchemaV\(versionSafe)_Test.swift")
 
+        // Ensure test target directory exists before writing
+        if !FileManager.default.fileExists(atPath: testTargetDir.path) {
+            try FileManager.default.createDirectory(at: testTargetDir, withIntermediateDirectories: true)
+        }
+
         try testContent.write(to: testFilePath, atomically: true, encoding: .utf8)
         print("   Generated: \(testFilePath.lastPathComponent)")
 

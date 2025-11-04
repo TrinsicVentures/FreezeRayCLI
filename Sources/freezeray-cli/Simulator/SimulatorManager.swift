@@ -327,8 +327,9 @@ extension SimulatorManager {
         // Smart scheme selection: prefer app schemes over library/test schemes
         // Priority:
         // 1. Schemes ending with "App" (e.g., "FreezeRayTestApp")
-        // 2. Schemes NOT containing Tests/CLI/E2E
-        // 3. First scheme as fallback
+        // 2. Schemes WITHOUT build config suffixes (DEBUG, RELEASE, etc.)
+        // 3. Schemes NOT containing Tests/CLI/E2E
+        // 4. First scheme as fallback
 
         // First, try to find schemes ending with "App"
         if let appScheme = schemes.first(where: { $0.hasSuffix("App") }) {
@@ -342,8 +343,19 @@ extension SimulatorManager {
             !scheme.contains("E2E")
         }
 
-        // If we found app-like schemes, prefer ones with more specific names
-        // (longer names are usually more specific, like "MyProjectTestApp" vs "freezeray")
+        // Third, prefer schemes WITHOUT build configuration suffixes
+        // Common suffixes: DEBUG, RELEASE, Ad Hoc, etc.
+        let buildConfigSuffixes = [" DEBUG", " RELEASE", " Ad Hoc", " AdHoc", "-DEBUG", "-RELEASE"]
+        let baseSchemesWithoutConfig = appSchemes.filter { scheme in
+            !buildConfigSuffixes.contains(where: { scheme.hasSuffix($0) })
+        }
+
+        // If we found base schemes, prefer the longest one (more specific)
+        if let baseScheme = baseSchemesWithoutConfig.max(by: { $0.count < $1.count }) {
+            return baseScheme
+        }
+
+        // If only config-suffixed schemes exist, pick any app scheme
         if let appScheme = appSchemes.max(by: { $0.count < $1.count }) {
             return appScheme
         }
@@ -353,7 +365,17 @@ extension SimulatorManager {
     }
 
     /// Infers test target from scheme name (typically {SchemeName}Tests)
+    /// Strips build configuration suffixes (e.g., "Clearly DEBUG" → "ClearlyTests")
     static func inferTestTarget(from scheme: String) -> String {
-        return "\(scheme)Tests"
+        // Strip common build configuration suffixes
+        let buildConfigSuffixes = [" DEBUG", " RELEASE", " Ad Hoc", " AdHoc", "-DEBUG", "-RELEASE"]
+        var baseScheme = scheme
+        for suffix in buildConfigSuffixes {
+            if baseScheme.hasSuffix(suffix) {
+                baseScheme = String(baseScheme.dropLast(suffix.count))
+                break
+            }
+        }
+        return "\(baseScheme)Tests"
     }
 }
