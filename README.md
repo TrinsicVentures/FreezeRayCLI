@@ -17,20 +17,28 @@ The CLI tool (`freezeray`) orchestrates the freezing workflow:
 
 ## Installation
 
-> **Note:** Distribution (Homebrew/npm) coming soon. For now, build from source.
+### Install via npm (Recommended)
 
-### Build from Source
+```bash
+npm install -g @trinsicventures/freezeray
+```
+
+Verify installation:
+```bash
+freezeray --version
+```
+
+> **Note:** Apple Silicon (ARM64) only. Intel Mac users should build from source.
+
+### Alternative: Build from Source
+
+For Intel Macs or if you prefer to build from source:
 
 ```bash
 git clone https://github.com/TrinsicVentures/FreezeRayCLI.git
 cd FreezeRayCLI
 swift build -c release
 cp .build/release/freezeray /usr/local/bin/
-```
-
-Verify installation:
-```bash
-freezeray --version
 ```
 
 ## Requirements
