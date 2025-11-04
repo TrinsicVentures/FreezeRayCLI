@@ -1,0 +1,37 @@
+{
+  "name": "@trinsicventures/freezeray",
+  "version": "0.4.3",
+  "description": "CLI tool for freezing SwiftData schemas and validating migration paths",
+  "bin": {
+    "freezeray": "./bin/freezeray"
+  },
+  "files": [
+    "bin/freezeray",
+    "README.md"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "keywords": [
+    "swiftdata",
+    "swift",
+    "ios",
+    "migration",
+    "schema",
+    "testing",
+    "xcode"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TrinsicVentures/FreezeRayCLI.git"
+  },
+  "homepage": "https://docs.freezeray.dev",
+  "bugs": {
+    "url": "https://github.com/TrinsicVentures/FreezeRayCLI/issues"
+  },
+  "license": "MIT",
+  "author": "Trinsic Ventures"
+}
