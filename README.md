@@ -120,7 +120,7 @@ Common options:
 
 ```bash
 swift build          # Build CLI
-swift test           # Run 22 unit tests
+swift test           # Run 26 unit tests
 ```
 
 ### Testing with Local Changes
@@ -155,10 +155,16 @@ FreezeRayCLI/
 │   └── freezeray-bin/            # CLI executable (thin wrapper)
 │       └── main.swift
 ├── Tests/
-│   └── FreezeRayCLITests/        # 22 unit tests
+│   └── FreezeRayCLITests/        # 26 unit tests
 │       ├── FreezeCommandTests.swift
-│       └── InitCommandTests.swift
+│       ├── InitCommandTests.swift
+│       └── SimulatorManagerTests.swift
+├── release/
+│   └── npm/                       # npm package configuration
+│       ├── package.json
+│       └── README.md
 ├── docs/                          # Mintlify documentation
+├── .mise.toml                     # Build and publish tasks
 └── Package.swift
 ```
 
