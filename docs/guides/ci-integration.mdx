@@ -5,4 +5,744 @@ description: 'Integrate FreezeRay into your CI pipeline'
 
 # CI Integration
 
-Documentation coming soon.
+Set up FreezeRay in your CI pipeline to catch schema drift and migration failures before they reach production. This guide covers GitHub Actions, GitLab CI, and general CI/CD principles.
+
+## Why CI Integration?
+
+**Problem:** Developers can accidentally modify frozen schemas locally, commit changes, and push to main before running tests.
+
+**Solution:** CI automatically runs drift and migration tests on every push and pull request, blocking changes that would break production.
+
+## What You'll Need
+
+- Frozen schemas with fixtures committed to git
+- A test target with drift and migration tests
+- CI/CD platform (GitHub Actions, GitLab CI, Bitrise, etc.)
+- macOS CI runners (required for Xcode builds)
+
+## GitHub Actions Setup
+
+### Basic Configuration
+
+Create `.github/workflows/test.yml`:
+
+```yaml
+name: Test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: macos-latest  # Required for Xcode
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_15.2.app
+
+      - name: Run tests
+        run: |
+          xcodebuild test \
+            -scheme MyApp \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -resultBundlePath TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: TestResults.xcresult
+```
+
+This runs **all tests** (including FreezeRay drift and migration tests) on every push and PR.
+
+### Targeted FreezeRay Tests
+
+To run only FreezeRay tests (faster feedback):
+
+```yaml
+jobs:
+  schema-validation:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_15.2.app
+
+      - name: Run drift detection tests
+        run: |
+          xcodebuild test \
+            -scheme MyApp \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -only-testing:MyAppTests/DriftTests
+
+      - name: Run migration tests
+        run: |
+          xcodebuild test \
+            -scheme MyApp \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -only-testing:MyAppTests/MigrationTests
+```
+
+<Info>
+Use `-only-testing` to run specific test classes for faster CI feedback.
+</Info>
+
+### Parallel Jobs
+
+Run drift and migration tests in parallel:
+
+```yaml
+jobs:
+  drift-tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: sudo xcode-select -s /Applications/Xcode_15.2.app
+      - run: |
+          xcodebuild test \
+            -scheme MyApp \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -only-testing:MyAppTests/DriftTests
+
+  migration-tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: sudo xcode-select -s /Applications/Xcode_15.2.app
+      - run: |
+          xcodebuild test \
+            -scheme MyApp \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -only-testing:MyAppTests/MigrationTests
+```
+
+### Caching Dependencies
+
+Speed up builds with caching:
+
+```yaml
+jobs:
+  test:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Cache Swift dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData
+            .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_15.2.app
+
+      - name: Run tests
+        run: |
+          xcodebuild test \
+            -scheme MyApp \
+            -destination 'platform=iOS Simulator,name=iPhone 15'
+```
+
+### Matrix Testing
+
+Test on multiple simulators:
+
+```yaml
+jobs:
+  test:
+    runs-on: macos-latest
+
+    strategy:
+      matrix:
+        simulator:
+          - iPhone 15
+          - iPhone 15 Pro
+          - iPad Pro (12.9-inch) (6th generation)
+
+    steps:
+      - uses: actions/checkout@v3
+      - run: sudo xcode-select -s /Applications/Xcode_15.2.app
+      - run: |
+          xcodebuild test \
+            -scheme MyApp \
+            -destination 'platform=iOS Simulator,name=${{ matrix.simulator }}'
+```
+
+## GitLab CI Setup
+
+Create `.gitlab-ci.yml`:
+
+```yaml
+stages:
+  - test
+
+test:
+  stage: test
+  tags:
+    - macos  # Must use macOS runner
+  script:
+    - xcodebuild test
+        -scheme MyApp
+        -destination 'platform=iOS Simulator,name=iPhone 15'
+        -resultBundlePath TestResults
+  artifacts:
+    when: always
+    paths:
+      - TestResults.xcresult
+    expire_in: 1 week
+```
+
+### Separate Drift and Migration Tests
+
+```yaml
+drift-tests:
+  stage: test
+  tags:
+    - macos
+  script:
+    - xcodebuild test
+        -scheme MyApp
+        -destination 'platform=iOS Simulator,name=iPhone 15'
+        -only-testing:MyAppTests/DriftTests
+
+migration-tests:
+  stage: test
+  tags:
+    - macos
+  script:
+    - xcodebuild test
+        -scheme MyApp
+        -destination 'platform=iOS Simulator,name=iPhone 15'
+        -only-testing:MyAppTests/MigrationTests
+```
+
+## Bitrise Setup
+
+Create `bitrise.yml`:
+
+```yaml
+workflows:
+  test:
+    steps:
+      - git-clone: {}
+      - xcode-test:
+          inputs:
+            - scheme: MyApp
+            - destination: 'platform=iOS Simulator,name=iPhone 15'
+            - generate_code_coverage_files: yes
+```
+
+Or use the Bitrise UI to add an "Xcode Test" step with:
+- **Scheme:** MyApp
+- **Destination:** platform=iOS Simulator,name=iPhone 15
+
+## CircleCI Setup
+
+Create `.circleci/config.yml`:
+
+```yaml
+version: 2.1
+
+jobs:
+  test:
+    macos:
+      xcode: 15.2.0
+
+    steps:
+      - checkout
+
+      - run:
+          name: Run tests
+          command: |
+            xcodebuild test \
+              -scheme MyApp \
+              -destination 'platform=iOS Simulator,name=iPhone 15'
+
+      - store_test_results:
+          path: TestResults
+
+workflows:
+  build-and-test:
+    jobs:
+      - test
+```
+
+## Best Practices
+
+### 1. Fail Fast on Drift
+
+Run drift tests first (they're faster than migration tests):
+
+```yaml
+jobs:
+  drift:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: |
+          xcodebuild test \
+            -scheme MyApp \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -only-testing:MyAppTests/DriftTests
+
+  migration:
+    runs-on: macos-latest
+    needs: drift  # Only run if drift tests pass
+    steps:
+      - uses: actions/checkout@v3
+      - run: |
+          xcodebuild test \
+            -scheme MyApp \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -only-testing:MyAppTests/MigrationTests
+```
+
+### 2. Run on Every Pull Request
+
+Catch drift before merging:
+
+```yaml
+on:
+  pull_request:
+    branches: [main]
+```
+
+### 3. Block Merging on Test Failures
+
+**GitHub:** Enable "Require status checks to pass before merging" in branch protection rules.
+
+**GitLab:** Set pipeline to "must succeed" in merge request settings.
+
+### 4. Clear Error Messages
+
+When tests fail, the error is logged in CI:
+
+```
+❌ Schema drift detected in sealed version 1.0.0
+
+Expected checksum: 0cc298858e409d8b9c7e37a7779af0e2
+Actual checksum:   26d70c10e9febf7f8c5a9e3d4b2a1f0e
+
+→ Sealed schemas are immutable - create a new schema version instead.
+```
+
+This tells developers **exactly** what went wrong and how to fix it.
+
+### 5. Test Coverage Reports
+
+Generate code coverage for migration tests:
+
+```yaml
+- name: Run tests with coverage
+  run: |
+    xcodebuild test \
+      -scheme MyApp \
+      -destination 'platform=iOS Simulator,name=iPhone 15' \
+      -enableCodeCoverage YES \
+      -resultBundlePath TestResults
+
+- name: Upload coverage to Codecov
+  uses: codecov/codecov-action@v3
+  with:
+    files: TestResults.xcresult
+```
+
+## Common CI Issues
+
+### Issue 1: Simulator Not Found
+
+**Error:**
+```
+xcodebuild: error: Unable to find a destination matching the provided destination specifier:
+  { platform:iOS Simulator, name:iPhone 17 }
+```
+
+**Cause:** iPhone 17 simulator not available in CI Xcode version.
+
+**Fix:**
+
+List available simulators:
+```yaml
+- name: List available simulators
+  run: xcrun simctl list devices available
+```
+
+Use a simulator that exists:
+```yaml
+- run: |
+    xcodebuild test \
+      -scheme MyApp \
+      -destination 'platform=iOS Simulator,name=iPhone 15'
+```
+
+### Issue 2: Fixtures Not Found
+
+**Error:**
+```
+⚠️  No frozen fixture found for v1.0.0
+Searched in:
+  - Bundle: ...
+  - Working directory: ...
+Run: freezeray freeze 1.0.0
+```
+
+**Cause:** Fixtures not committed to git or not included in test bundle.
+
+**Fix:**
+
+1. Commit fixtures:
+   ```bash
+   git add FreezeRay/Fixtures/
+   git commit -m "Add frozen fixtures"
+   ```
+
+2. Verify fixtures are in git:
+   ```bash
+   git ls-files FreezeRay/
+   ```
+
+3. Ensure fixtures are in test bundle (Xcode projects):
+   - Select test target → Build Phases → Copy Bundle Resources
+   - Add `FreezeRay/` folder
+
+### Issue 3: Build Takes Too Long
+
+**Problem:** CI builds timeout (>10 minutes).
+
+**Solutions:**
+
+1. **Cache dependencies:**
+   ```yaml
+   - name: Cache Swift dependencies
+     uses: actions/cache@v3
+     with:
+       path: ~/Library/Developer/Xcode/DerivedData
+       key: ${{ runner.os }}-xcode-${{ hashFiles('**/Package.resolved') }}
+   ```
+
+2. **Run only FreezeRay tests:**
+   ```yaml
+   - run: xcodebuild test -only-testing:MyAppTests/DriftTests
+   ```
+
+3. **Use faster macOS runners** (GitHub: macos-latest, not macos-11)
+
+### Issue 4: Permission Denied Errors
+
+**Error:**
+```
+xcodebuild: error: Could not resolve package dependencies:
+  Permission denied
+```
+
+**Cause:** CI runner doesn't have Xcode command line tools set up.
+
+**Fix:**
+```yaml
+- name: Select Xcode version
+  run: sudo xcode-select -s /Applications/Xcode_15.2.app
+
+- name: Accept Xcode license
+  run: sudo xcodebuild -license accept
+```
+
+### Issue 5: Test Flakiness
+
+**Problem:** Tests sometimes pass, sometimes fail.
+
+**Causes:**
+- Race conditions in test setup
+- Simulator state not reset between runs
+- Network-dependent tests
+
+**Fix:**
+
+1. **Reset simulator state:**
+   ```yaml
+   - name: Reset simulator
+     run: |
+       xcrun simctl shutdown all
+       xcrun simctl erase all
+   ```
+
+2. **Increase test timeout:**
+   ```swift
+   // In test file
+   @Test(timeout: .seconds(60))
+   func testMigration() throws { /* ... */ }
+   ```
+
+3. **Isolate test data:**
+   ```swift
+   func testMigration() throws {
+       // Use unique temp directory per test
+       let testDir = URL(fileURLWithPath: NSTemporaryDirectory())
+           .appendingPathComponent(UUID().uuidString)
+       // ...
+   }
+   ```
+
+## Advanced Workflows
+
+### Pre-Merge Freeze Checks
+
+Ensure no new schema versions are frozen without proper review:
+
+```yaml
+name: Schema Freeze Check
+
+on:
+  pull_request:
+    paths:
+      - 'FreezeRay/Fixtures/**'
+
+jobs:
+  check-freeze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Check for new frozen schemas
+        run: |
+          NEW_FIXTURES=$(git diff --name-only origin/main... | grep "FreezeRay/Fixtures")
+          if [ -n "$NEW_FIXTURES" ]; then
+            echo "⚠️  New frozen schemas detected:"
+            echo "$NEW_FIXTURES"
+            echo ""
+            echo "Please ensure:"
+            echo "  1. Schema changes were reviewed"
+            echo "  2. Migration tests are added"
+            echo "  3. Documentation is updated"
+          fi
+```
+
+### Slack Notifications on Failure
+
+Notify team when drift is detected:
+
+```yaml
+- name: Notify on drift failure
+  if: failure()
+  uses: slackapi/slack-github-action@v1
+  with:
+    webhook-url: ${{ secrets.SLACK_WEBHOOK }}
+    payload: |
+      {
+        "text": "⚠️ Schema drift detected in PR #${{ github.event.pull_request.number }}",
+        "blocks": [
+          {
+            "type": "section",
+            "text": {
+              "type": "mrkdwn",
+              "text": "Schema drift detected! Review the PR before merging."
+            }
+          }
+        ]
+      }
+```
+
+### Auto-Comment on PRs
+
+Add a comment to PRs when drift is detected:
+
+```yaml
+- name: Comment on PR
+  if: failure()
+  uses: actions/github-script@v6
+  with:
+    script: |
+      github.rest.issues.createComment({
+        issue_number: context.issue.number,
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        body: '❌ Schema drift detected! Frozen schemas cannot be modified. Please create a new schema version instead.'
+      })
+```
+
+## Monitoring and Reporting
+
+### Track Schema Changes Over Time
+
+Log schema versions in CI:
+
+```yaml
+- name: Report schema versions
+  run: |
+    echo "Frozen schema versions:"
+    ls FreezeRay/Fixtures/
+```
+
+### Generate Migration Report
+
+Create a summary of all migrations:
+
+```yaml
+- name: Generate migration report
+  run: |
+    echo "# Migration Report" > migration_report.md
+    echo "" >> migration_report.md
+    echo "Frozen versions:" >> migration_report.md
+    for dir in FreezeRay/Fixtures/*/; do
+      version=$(basename "$dir")
+      echo "- $version" >> migration_report.md
+    done
+
+- name: Upload report
+  uses: actions/upload-artifact@v3
+  with:
+    name: migration-report
+    path: migration_report.md
+```
+
+## Example: Full GitHub Actions Workflow
+
+Here's a complete, production-ready workflow:
+
+```yaml
+name: FreezeRay Schema Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  drift-tests:
+    name: Drift Detection
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Cache Swift dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData
+            .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_15.2.app
+
+      - name: List available simulators
+        run: xcrun simctl list devices available | grep iPhone
+
+      - name: Run drift detection tests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -scheme MyApp \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -only-testing:MyAppTests/DriftTests \
+            -resultBundlePath TestResults \
+            | xcpretty
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: drift-test-results
+          path: TestResults.xcresult
+
+  migration-tests:
+    name: Migration Tests
+    runs-on: macos-latest
+    needs: drift-tests  # Only run if drift tests pass
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Cache Swift dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData
+            .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_15.2.app
+
+      - name: Run migration tests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -scheme MyApp \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -only-testing:MyAppTests/MigrationTests \
+            -resultBundlePath TestResults \
+            | xcpretty
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: migration-test-results
+          path: TestResults.xcresult
+
+      - name: Comment on PR (if failed)
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ Migration tests failed! Review the test results before merging.'
+            })
+```
+
+## Summary
+
+You've learned how to:
+
+- ✅ Set up FreezeRay tests in GitHub Actions, GitLab CI, and other CI platforms
+- ✅ Run drift and migration tests in parallel
+- ✅ Fail fast with drift detection
+- ✅ Handle common CI issues
+- ✅ Add notifications and reporting
+
+CI integration ensures schema changes are caught **before** they reach production!
+
+## Next Steps
+
+<Columns cols={2}>
+  <Card title="First Freeze" icon="snowflake" href="/guides/first-freeze">
+    Tutorial for freezing your first schema
+  </Card>
+  <Card title="Testing Migrations" icon="code-branch" href="/guides/testing-migrations">
+    Learn to write custom migration tests
+  </Card>
+  <Card title="Drift Detection" icon="triangle-exclamation" href="/concepts/drift-detection">
+    Understand how drift detection works
+  </Card>
+  <Card title="freeze command" icon="terminal" href="/cli/freeze">
+    CLI reference for freezing schemas
+  </Card>
+</Columns>

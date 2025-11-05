@@ -9,6 +9,7 @@ public struct FreezeRayCLI: ParsableCommand {
         subcommands: [
             InitCommand.self,
             FreezeCommand.self,
+            GenerateCommand.self,
         ],
         defaultSubcommand: nil
     )

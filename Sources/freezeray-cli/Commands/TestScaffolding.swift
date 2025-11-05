@@ -10,28 +10,35 @@ public struct TestScaffolding {
     public struct ScaffoldResult {
         public let fileName: String
         public let created: Bool  // true if created, false if already existed
+        public let createdFile: URL?  // URL if file was created
+        public let targetPath: URL?   // Target path (whether created or skipped)
+        public let skipped: Bool      // true if file existed and was not overwritten
 
-        public init(fileName: String, created: Bool) {
+        public init(fileName: String, created: Bool, createdFile: URL? = nil, targetPath: URL? = nil, skipped: Bool = false) {
             self.fileName = fileName
             self.created = created
+            self.createdFile = createdFile
+            self.targetPath = targetPath
+            self.skipped = skipped
         }
     }
 
     /// Scaffolds a drift test file for a schema version
-    /// Only creates the file if it doesn't already exist (user-owned)
+    /// Only creates the file if it doesn't already exist (user-owned), unless force is true
     public func scaffoldDriftTest(
         testsDir: URL,
         schemaType: String,
         appTarget: String,
-        version: String
+        version: String,
+        force: Bool = false
     ) throws -> ScaffoldResult {
         let versionSafe = version.replacingOccurrences(of: ".", with: "_")
         let fileName = "\(schemaType)_DriftTests.swift"
         let filePath = testsDir.appendingPathComponent(fileName)
 
-        // Skip if file already exists (user-owned, never overwrite)
-        if FileManager.default.fileExists(atPath: filePath.path) {
-            return ScaffoldResult(fileName: fileName, created: false)
+        // Skip if file already exists (user-owned, never overwrite) unless force is true
+        if FileManager.default.fileExists(atPath: filePath.path) && !force {
+            return ScaffoldResult(fileName: fileName, created: false, createdFile: nil, targetPath: filePath, skipped: true)
         }
 
         let testContent = """
@@ -49,27 +56,32 @@ public struct TestScaffolding {
         ///
         /// This test verifies that the current schema definition matches the frozen fixture.
         /// If this test fails, it means the schema has been modified since it was frozen.
-        @Test("\(schemaType) v\(version) has not drifted")
-        func test\(schemaType)_\(versionSafe)_Drift() throws {
-            // Call the macro-generated check function
-            try \(schemaType).__freezeray_check_\(versionSafe)()
+        ///
+        /// Note: Tests run serially to avoid SwiftData store conflicts
+        @Suite(.serialized)
+        struct \(schemaType)_\(versionSafe)_DriftTests {
+            @Test("\(schemaType) v\(version) has not drifted")
+            func test\(schemaType)_\(versionSafe)_Drift() throws {
+                // Call the macro-generated check function
+                try \(schemaType).__freezeray_check_\(versionSafe)()
 
-            // TODO: Add custom data validation here
-            // Example:
-            // - Verify specific model properties exist
-            // - Check relationship configurations
-            // - Validate index definitions
+                // TODO: Add custom data validation here
+                // Example:
+                // - Verify specific model properties exist
+                // - Check relationship configurations
+                // - Validate index definitions
+            }
         }
 
         """
 
         try testContent.write(to: filePath, atomically: true, encoding: .utf8)
 
-        return ScaffoldResult(fileName: fileName, created: true)
+        return ScaffoldResult(fileName: fileName, created: true, createdFile: filePath, targetPath: filePath, skipped: false)
     }
 
     /// Scaffolds a migration test file for upgrading from one version to another
-    /// Only creates the file if it doesn't already exist (user-owned)
+    /// Only creates the file if it doesn't already exist (user-owned), unless force is true
     public func scaffoldMigrationTest(
         testsDir: URL,
         migrationPlan: String,
@@ -77,16 +89,17 @@ public struct TestScaffolding {
         fromSchemaType: String,
         toVersion: String,
         toSchemaType: String,
-        appTarget: String
+        appTarget: String,
+        force: Bool = false
     ) throws -> ScaffoldResult {
         let fromSafe = fromVersion.replacingOccurrences(of: ".", with: "_")
         let toSafe = toVersion.replacingOccurrences(of: ".", with: "_")
         let fileName = "MigrateV\(fromSafe)toV\(toSafe)_Tests.swift"
         let filePath = testsDir.appendingPathComponent(fileName)
 
-        // Skip if file already exists (user-owned, never overwrite)
-        if FileManager.default.fileExists(atPath: filePath.path) {
-            return ScaffoldResult(fileName: fileName, created: false)
+        // Skip if file already exists (user-owned, never overwrite) unless force is true
+        if FileManager.default.fileExists(atPath: filePath.path) && !force {
+            return ScaffoldResult(fileName: fileName, created: false, createdFile: nil, targetPath: filePath, skipped: true)
         }
 
         let testContent = """
@@ -103,28 +116,33 @@ public struct TestScaffolding {
         /// Migration test from v\(fromVersion) → v\(toVersion)
         ///
         /// This test verifies that the migration path between these versions works correctly.
-        @Test("Migrate v\(fromVersion) → v\(toVersion)")
-        func testMigrateV\(fromSafe)toV\(toSafe)() throws {
-            // Test the migration using FreezeRayRuntime
-            try FreezeRayRuntime.testMigration(
-                from: \(fromSchemaType).self,
-                to: \(toSchemaType).self,
-                migrationPlan: \(migrationPlan).self
-            )
+        ///
+        /// Note: Tests run serially to avoid SwiftData store conflicts
+        @Suite(.serialized)
+        struct MigrateV\(fromSafe)toV\(toSafe)_Tests {
+            @Test("Migrate v\(fromVersion) → v\(toVersion)")
+            func testMigrateV\(fromSafe)toV\(toSafe)() throws {
+                // Test the migration using FreezeRayRuntime
+                try FreezeRayRuntime.testMigration(
+                    from: \(fromSchemaType).self,
+                    to: \(toSchemaType).self,
+                    migrationPlan: \(migrationPlan).self
+                )
 
-            // TODO: Add data integrity checks here
-            // Example:
-            // - Verify data is preserved during migration
-            // - Check that new fields have default values
-            // - Validate relationship updates
-            // - Ensure no data loss for critical fields
+                // TODO: Add data integrity checks here
+                // Example:
+                // - Verify data is preserved during migration
+                // - Check that new fields have default values
+                // - Validate relationship updates
+                // - Ensure no data loss for critical fields
+            }
         }
 
         """
 
         try testContent.write(to: filePath, atomically: true, encoding: .utf8)
 
-        return ScaffoldResult(fileName: fileName, created: true)
+        return ScaffoldResult(fileName: fileName, created: true, createdFile: filePath, targetPath: filePath, skipped: false)
     }
 
     /// Finds the previous version by scanning the Fixtures directory

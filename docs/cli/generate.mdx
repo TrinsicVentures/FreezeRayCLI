@@ -1,0 +1,802 @@
+---
+title: freezeray generate
+description: 'Generate FreezeRay artifacts with fine-grained control'
+---
+
+# freezeray generate
+
+Generate FreezeRay artifacts (fixtures, schema tests, or migration tests) with granular control over the workflow.
+
+## Synopsis
+
+```bash
+freezeray generate <SUBCOMMAND> [OPTIONS]
+
+# Short alias
+freezeray g <SUBCOMMAND> [OPTIONS]
+```
+
+## Description
+
+The `generate` command provides **granular operations** for creating FreezeRay artifacts separately.
+
+**Most important:** Use `generate migration-tests` when starting work on a new schema version. This lets you write and test migrations as you develop.
+
+The other subcommands (`fixtures`, `schema-tests`) are **rarely needed** because `freeze` handles them automatically.
+
+## Subcommands
+
+### `migration-tests` - Generate migration tests ⭐
+
+```bash
+freezeray generate migration-tests --from-schema <VERSION> --to-schema <VERSION>
+```
+
+Generates a migration test file that validates data migration between two schema versions.
+
+**This is the primary use case for the `generate` command.**
+
+[See detailed documentation →](#generate-migration-tests)
+
+### `fixtures` - Generate frozen fixtures (Advanced)
+
+```bash
+freezeray generate fixtures --schema <VERSION>
+```
+
+Generates frozen SwiftData fixtures for a specific schema version.
+
+**Rarely needed:** `freeze` does this automatically.
+
+[See detailed documentation →](#generate-fixtures)
+
+### `schema-tests` - Generate drift tests (Advanced)
+
+```bash
+freezeray generate schema-tests --schema <VERSION>
+```
+
+Generates a drift test file that validates a frozen schema hasn't changed.
+
+**Rarely needed:** `freeze` does this automatically.
+
+[See detailed documentation →](#generate-schema-tests)
+
+## Why Use `generate migration-tests`?
+
+### The Correct Workflow
+
+Migration tests should be created **when you start** working on a new schema version, not after:
+
+```bash
+# 1. Freeze V2
+freezeray freeze 2.0.0
+
+# 2. Generate migration test WHEN STARTING V3 work
+freezeray generate migration-tests --from-schema 2.0.0 --to-schema 3.0.0
+
+# 3. Edit the generated test, add custom assertions
+# 4. Implement V3 schema + migration
+# 5. Iterate: run test → fix migration → run test (⌘U)
+# 6. When ready, freeze V3
+freezeray freeze 3.0.0
+```
+
+This lets you **develop with the migration test** as you build the new schema.
+
+<Info>
+**Key insight:** `freeze` does NOT generate migration tests. You must explicitly run `generate migration-tests` when starting work on a new schema version.
+</Info>
+
+---
+
+## generate fixtures
+
+Generate frozen fixtures for a specific schema version.
+
+### Synopsis
+
+```bash
+freezeray generate fixtures --schema <VERSION> [OPTIONS]
+```
+
+### Description
+
+Generates frozen SwiftData fixtures by:
+
+1. Discovering the `@FreezeSchema(version: "X.Y.Z")` annotation
+2. Running a freeze test in iOS Simulator
+3. Extracting fixtures from `/tmp` to `FreezeRay/Fixtures/<VERSION>/`
+
+### Arguments
+
+#### `--schema <VERSION>`, `-s <VERSION>`
+
+**Required.** The schema version to freeze (e.g., "1.0.0").
+
+Must match a `@FreezeSchema` annotation in your source code:
+
+```swift
+@FreezeSchema(version: "3.0.0")
+enum AppSchemaV3: VersionedSchema {
+    // ...
+}
+```
+
+### Options
+
+#### `--simulator <NAME>`
+
+**Default:** `iPhone 17`
+
+iOS Simulator to use for freezing:
+
+```bash
+freezeray generate fixtures --schema 3.0.0 --simulator "iPhone 15 Pro"
+```
+
+#### `--scheme <NAME>`
+
+**Default:** Auto-detected
+
+Xcode scheme to build:
+
+```bash
+freezeray generate fixtures --schema 3.0.0 --scheme MyApp
+```
+
+#### `--force`
+
+Overwrite existing fixtures (dangerous!):
+
+```bash
+freezeray generate fixtures --schema 3.0.0 --force
+```
+
+<Warning>
+Only use `--force` during development before shipping to production. Overwriting frozen fixtures breaks immutability.
+</Warning>
+
+#### `--output <PATH>`
+
+**Default:** `FreezeRay/Fixtures`
+
+Custom output directory:
+
+```bash
+freezeray generate fixtures --schema 3.0.0 --output /custom/path
+```
+
+#### `--config <PATH>`
+
+Path to `FreezeRay.yaml` config file (experimental):
+
+```bash
+freezeray generate fixtures --schema 3.0.0 --config .freezeray.yml
+```
+
+### What Gets Created
+
+```
+FreezeRay/Fixtures/3.0.0/
+├── App-3.0.0.sqlite          # Frozen SQLite database
+├── App-3.0.0.sqlite-shm      # SQLite shared memory file
+├── schema-3.0.0.sql          # SQL DDL statements
+├── schema-3.0.0.json         # Human-readable schema metadata
+├── schema-3.0.0.sha256       # SHA256 checksum for drift detection
+└── export_metadata.txt       # Timestamp and version info
+```
+
+### Examples
+
+#### Basic usage
+
+```bash
+freezeray generate fixtures --schema 3.0.0
+```
+
+**Output:**
+```
+🔍 Generating fixtures for schema version 3.0.0...
+📱 Running freeze test in simulator (iPhone 17)...
+📦 Extracting fixtures from simulator...
+✅ Generated fixtures: FreezeRay/Fixtures/3.0.0/
+   - App-3.0.0.sqlite
+   - schema-3.0.0.sql
+   - schema-3.0.0.json
+   - schema-3.0.0.sha256
+   - export_metadata.txt
+   - App-3.0.0.sqlite-shm
+```
+
+#### Short form
+
+```bash
+freezeray g fixtures -s 3.0.0
+```
+
+#### Custom simulator
+
+```bash
+freezeray generate fixtures --schema 3.0.0 --simulator "iPhone 15"
+```
+
+### Common Errors
+
+#### "No @FreezeSchema found for version X.Y.Z"
+
+**Cause:** The version doesn't match any `@FreezeSchema` annotation.
+
+**Fix:** Add the annotation to your schema:
+
+```swift
+@FreezeSchema(version: "3.0.0")
+enum AppSchemaV3: VersionedSchema {
+    // ...
+}
+```
+
+#### "Fixtures already exist"
+
+**Cause:** Fixtures for this version already exist.
+
+**Solutions:**
+
+During development (before shipping):
+```bash
+freezeray generate fixtures --schema 3.0.0 --force
+```
+
+After shipping to production:
+```bash
+# Create new version instead
+freezeray generate fixtures --schema 3.0.1
+```
+
+---
+
+## generate schema-tests
+
+Generate drift test for a frozen schema version.
+
+### Synopsis
+
+```bash
+freezeray generate schema-tests --schema <VERSION> [OPTIONS]
+```
+
+### Description
+
+Generates a drift test file that validates the current schema definition matches the frozen fixtures.
+
+**Requirements:**
+- Fixtures must already exist for the specified version
+- Run `freezeray generate fixtures` first if needed
+
+### Arguments
+
+#### `--schema <VERSION>`, `-s <VERSION>`
+
+**Required.** The schema version to generate tests for (e.g., "3.0.0").
+
+### Options
+
+#### `--force`
+
+Overwrite existing test file:
+
+```bash
+freezeray generate schema-tests --schema 3.0.0 --force
+```
+
+By default, existing test files are never overwritten (they're user-owned).
+
+#### `--config <PATH>`
+
+Path to config file (experimental):
+
+```bash
+freezeray generate schema-tests --schema 3.0.0 --config .freezeray.yml
+```
+
+### What Gets Created
+
+```swift
+// FreezeRay/Tests/AppSchemaV3_DriftTests.swift
+import Testing
+import FreezeRay
+@testable import MyApp
+
+/// Drift test for AppSchemaV3 v3.0.0
+///
+/// This test verifies that the current schema definition matches the frozen fixture.
+/// If this test fails, it means the schema has been modified since it was frozen.
+///
+/// Note: Tests run serially to avoid SwiftData store conflicts
+@Suite(.serialized)
+struct AppSchemaV3_3_0_0_DriftTests {
+    @Test("AppSchemaV3 v3.0.0 has not drifted")
+    func testAppSchemaV3_3_0_0_Drift() throws {
+        // Call the macro-generated check function
+        try AppSchemaV3.__freezeray_check_3_0_0()
+
+        // TODO: Add custom data validation here
+        // Example:
+        // - Verify specific model properties exist
+        // - Check relationship configurations
+        // - Validate index definitions
+    }
+}
+```
+
+<Info>
+Generated tests use `@Suite(.serialized)` to prevent parallel execution issues with SwiftData stores.
+</Info>
+
+### Examples
+
+#### Basic usage
+
+```bash
+freezeray generate schema-tests --schema 3.0.0
+```
+
+**Output:**
+```
+🔍 Generating schema tests for version 3.0.0...
+✅ Generated drift test: AppSchemaV3_DriftTests.swift
+```
+
+#### Short form
+
+```bash
+freezeray g schema-tests -s 3.0.0
+```
+
+#### Regenerate (overwrite)
+
+```bash
+freezeray generate schema-tests --schema 3.0.0 --force
+```
+
+### Common Errors
+
+#### "No fixtures found for version X.Y.Z"
+
+**Cause:** Fixtures don't exist for the specified version.
+
+**Fix:** Generate fixtures first:
+
+```bash
+freezeray generate fixtures --schema 3.0.0
+freezeray generate schema-tests --schema 3.0.0
+```
+
+#### "Test file already exists"
+
+**Cause:** The drift test file was already generated.
+
+**Solutions:**
+
+If you want to keep your custom assertions:
+```bash
+# Do nothing - the existing test is yours to maintain
+```
+
+If you want to regenerate:
+```bash
+freezeray generate schema-tests --schema 3.0.0 --force
+```
+
+---
+
+## generate migration-tests
+
+Generate migration test from one schema version to another.
+
+### Synopsis
+
+```bash
+freezeray generate migration-tests --from-schema <VERSION> --to-schema <VERSION> [OPTIONS]
+```
+
+### Description
+
+Generates a migration test file that validates data migration between two schema versions.
+
+This is the **key innovation** of the `generate` command: you can create the migration test **early** in your development workflow, not after the fact.
+
+**Requirements:**
+- Fixtures must exist for `--from-schema` version
+- `@FreezeSchema` must exist in code for `--to-schema` version
+- `SchemaMigrationPlan` must have a migration stage between versions
+
+**Behavior if test file exists:**
+- Does **NOT** overwrite (preserves user's custom assertions)
+- Prints skip message
+- Use `--force` to overwrite
+
+### Arguments
+
+#### `--from-schema <VERSION>`, `-f <VERSION>`
+
+**Required.** Source schema version (e.g., "2.0.0").
+
+#### `--to-schema <VERSION>`, `-t <VERSION>`
+
+**Required.** Target schema version (e.g., "3.0.0").
+
+### Options
+
+#### `--force`
+
+Overwrite existing test file:
+
+```bash
+freezeray generate migration-tests -f 2.0.0 -t 3.0.0 --force
+```
+
+<Warning>
+Only use `--force` if you're sure you want to discard custom assertions you've added to the test.
+</Warning>
+
+#### `--config <PATH>`
+
+Path to config file (experimental):
+
+```bash
+freezeray generate migration-tests -f 2.0.0 -t 3.0.0 --config .freezeray.yml
+```
+
+### What Gets Created
+
+```swift
+// FreezeRay/Tests/MigrateV2_0_0toV3_0_0_Tests.swift
+import Testing
+import FreezeRay
+@testable import MyApp
+
+/// Migration test from v2.0.0 → v3.0.0
+///
+/// This test verifies that the migration path between these versions works correctly.
+///
+/// Note: Tests run serially to avoid SwiftData store conflicts
+@Suite(.serialized)
+struct MigrateV2_0_0toV3_0_0_Tests {
+    @Test("Migrate v2.0.0 → v3.0.0")
+    func testMigrateV2_0_0toV3_0_0() throws {
+        // Test the migration using FreezeRayRuntime
+        try FreezeRayRuntime.testMigration(
+            from: AppSchemaV2.self,
+            to: AppSchemaV3.self,
+            migrationPlan: AppMigrations.self
+        )
+
+        // TODO: Add data integrity checks here
+        // Example:
+        // - Verify data is preserved during migration
+        // - Check that new fields have default values
+        // - Validate relationship updates
+        // - Ensure no data loss for critical fields
+    }
+}
+```
+
+<Info>
+The generated test includes `@Suite(.serialized)` to fix parallel execution issues that cause SwiftData store conflicts.
+</Info>
+
+### Examples
+
+#### Basic usage (early workflow)
+
+```bash
+# When starting V3 development
+freezeray generate migration-tests --from-schema 2.0.0 --to-schema 3.0.0
+
+# Edit generated test, add assertions
+# Implement V3 schema + migration
+# Iterate: run test → fix migration → run test
+```
+
+**Output:**
+```
+🔍 Generating migration test: v2.0.0 → v3.0.0...
+✅ Generated migration test: MigrateV2_0_0toV3_0_0_Tests.swift
+   Edit this file to add custom migration assertions
+```
+
+#### Short form
+
+```bash
+freezeray g migration-tests -f 2.0.0 -t 3.0.0
+```
+
+#### Regenerate (overwrite custom assertions)
+
+```bash
+freezeray generate migration-tests -f 2.0.0 -t 3.0.0 --force
+```
+
+**Output:**
+```
+✅ Generated migration test: MigrateV2_0_0toV3_0_0_Tests.swift
+```
+
+### Common Errors
+
+#### "No fixtures found for version X.Y.Z"
+
+**Cause:** Source schema fixtures don't exist.
+
+**Fix:** Freeze the source version first:
+
+```bash
+freezeray freeze 2.0.0
+freezeray generate migration-tests -f 2.0.0 -t 3.0.0
+```
+
+#### "No @FreezeSchema found for version X.Y.Z"
+
+**Cause:** Target schema doesn't exist in code yet.
+
+**Fix:** Define the target schema:
+
+```swift
+@FreezeSchema(version: "3.0.0")
+enum AppSchemaV3: VersionedSchema {
+    // ...
+}
+```
+
+Then generate the test:
+
+```bash
+freezeray generate migration-tests -f 2.0.0 -t 3.0.0
+```
+
+#### "No SchemaMigrationPlan found in codebase"
+
+**Cause:** You haven't defined a migration plan.
+
+**Fix:** Create a migration plan:
+
+```swift
+enum AppMigrations: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] {
+        [AppSchemaV1.self, AppSchemaV2.self, AppSchemaV3.self]
+    }
+
+    static var stages: [MigrationStage] {
+        [migrateV1toV2, migrateV2toV3]
+    }
+
+    static let migrateV2toV3 = MigrationStage.custom(
+        fromVersion: AppSchemaV2.self,
+        toVersion: AppSchemaV3.self,
+        willMigrate: nil,
+        didMigrate: { context in
+            // Migration logic
+        }
+    )
+}
+```
+
+Then generate the test:
+
+```bash
+freezeray generate migration-tests -f 2.0.0 -t 3.0.0
+```
+
+#### "Migration test already exists"
+
+**Cause:** You've already generated the migration test.
+
+**Solutions:**
+
+If you've added custom assertions:
+```bash
+# Do nothing - keep your custom test
+```
+
+If you want to start over:
+```bash
+freezeray generate migration-tests -f 2.0.0 -t 3.0.0 --force
+```
+
+---
+
+## Complete Workflow Example
+
+```bash
+# 1. Ship V2
+freezeray freeze 2.0.0
+
+# 2. Start V3 development - generate migration test immediately
+freezeray generate migration-tests -f 2.0.0 -t 3.0.0
+
+# 3. Edit generated test, add custom assertions
+vim FreezeRay/Tests/MigrateV2_0_0toV3_0_0_Tests.swift
+
+# 4. Implement V3 schema + migration
+# (edit schema files, add migration stage)
+
+# 5. Iterate: run tests normally as you develop
+# ⌘U in Xcode or:
+xcodebuild test -scheme MyApp
+
+# 6. Ship V3
+freezeray freeze 3.0.0  # Just generates fixtures + drift test
+```
+
+**Key point:** You develop with the migration test from the start, not after the fact.
+
+---
+
+## Parallel Execution Fix
+
+All generated tests now use `@Suite(.serialized)` to prevent parallel execution issues.
+
+### Problem (Before)
+
+Migration tests failed when run in parallel (Swift Testing default):
+
+```bash
+swift test
+# ❌ All 3 migration tests fail due to parallel execution
+```
+
+Running individually worked:
+
+```bash
+swift test --filter MigrateV2toV3
+# ✅ Passes
+```
+
+**Cause:** Tests create/destroy SwiftData stores in temp directories with potential collisions.
+
+### Solution (After)
+
+Generated tests now use `@Suite(.serialized)`:
+
+```swift
+@Suite(.serialized)  // ← Prevents parallel execution
+struct MigrateV2_0_0toV3_0_0_Tests {
+    @Test func testMigrateV2_0_0toV3_0_0() throws {
+        // ...
+    }
+}
+```
+
+Now tests work in default harness:
+
+```bash
+swift test
+# ✅ All tests pass
+```
+
+---
+
+## Best Practices
+
+### 1. Generate Migration Tests Early
+
+Generate the migration test **when you start** working on the migration:
+
+```bash
+# ✅ Good: Generate early
+freezeray generate migration-tests -f 2.0.0 -t 3.0.0
+# Edit test, add assertions
+# Implement migration
+# Iterate until test passes
+
+# ❌ Bad: Generate after implementing
+# (implement migration)
+# (write custom test)
+freezeray freeze 3.0.0  # Conflict!
+```
+
+### 2. Never Overwrite User Tests
+
+The `generate` commands **never overwrite** existing test files by default:
+
+```bash
+# First time: creates file
+freezeray generate migration-tests -f 2.0.0 -t 3.0.0
+# ✅ Generated migration test
+
+# Second time: skips
+freezeray generate migration-tests -f 2.0.0 -t 3.0.0
+# ⚠️  Migration test already exists (preserving custom assertions)
+```
+
+This protects your custom assertions.
+
+### 3. Use `freeze` for Complete Workflow
+
+For most users, `freeze` is still the recommended command:
+
+```bash
+# This is still the easiest workflow
+freezeray freeze 1.0.0  # Does everything
+```
+
+Only use `generate` when you need **fine-grained control**:
+
+- Generate migration tests early ✅
+- Regenerate specific artifacts ✅
+- Customize the workflow ✅
+
+### 4. Commit Generated Tests
+
+Generated tests are **yours to maintain**:
+
+```bash
+freezeray generate migration-tests -f 2.0.0 -t 3.0.0
+
+# Add custom assertions
+vim FreezeRay/Tests/MigrateV2_0_0toV3_0_0_Tests.swift
+
+# Commit with schema changes
+git add FreezeRay/Tests/
+git commit -m "Add migration test for V2→V3 with data integrity checks"
+```
+
+Test files evolve with your schema, just like any other test.
+
+---
+
+## What `freeze` Does
+
+The `freeze` command is simpler than `generate` - it only creates fixtures and drift tests:
+
+```bash
+freezeray freeze 3.0.0
+```
+
+Internally equivalent to:
+
+```bash
+# 1. Generate fixtures (via simulator)
+freezeray generate fixtures --schema 3.0.0
+
+# 2. Generate drift test (if doesn't exist)
+freezeray generate schema-tests --schema 3.0.0
+```
+
+**That's it!** `freeze` does NOT touch migration tests.
+
+Migration tests are managed separately with `generate migration-tests`.
+
+---
+
+## Requirements
+
+Same as `freezeray freeze`:
+
+- **macOS 14+**
+- **Xcode 15+**
+- **iOS Simulator** (iPhone 17 recommended)
+- **Project structure:**
+  - `@FreezeSchema(version: "X.X.X")` annotations
+  - Test target for running freeze tests
+  - Xcode project or Swift Package with iOS target
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="freeze command" icon="snowflake" href="/cli/freeze">
+    Learn about the convenience freeze command
+  </Card>
+  <Card title="Testing Migrations" icon="code-branch" href="/guides/testing-migrations">
+    Step-by-step guide for the new migration workflow
+  </Card>
+  <Card title="Migration Testing Concepts" icon="book" href="/concepts/migration-testing">
+    Understand how migration tests work
+  </Card>
+  <Card title="Drift Detection" icon="triangle-exclamation" href="/concepts/drift-detection">
+    Learn about schema drift detection
+  </Card>
+</CardGroup>

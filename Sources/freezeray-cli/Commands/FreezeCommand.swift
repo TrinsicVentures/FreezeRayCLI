@@ -82,7 +82,7 @@ struct FreezeCommand: ParsableCommand {
         print("🔹 Generating freeze test...")
         // Convention: app target is test target without "Tests" suffix
         let appTarget = testTarget.replacingOccurrences(of: "Tests", with: "")
-        let testFilePath = try generateFreezeTest(
+        let testFilePath = try FreezeCommand.generateFreezeTest(
             workingDir: workingDir,
             testTarget: testTarget,
             appTarget: appTarget,
@@ -141,57 +141,12 @@ struct FreezeCommand: ParsableCommand {
             print("   Skipped: \(scaffoldResult.fileName) (already exists)")
         }
 
-        // 8. Scaffold migration test (if previous version exists)
-        let fixturesRootDir = workingDir.appendingPathComponent("FreezeRay/Fixtures")
-        var migrationResult: TestScaffolding.ScaffoldResult?
-        if let previousVersion = scaffolding.findPreviousVersion(current: version, fixturesDir: fixturesRootDir) {
-            print("🔹 Scaffolding migration test...")
-
-            // Find schema type for previous version
-            guard let previousSchema = discovery.freezeAnnotations.first(where: { $0.version == previousVersion }) else {
-                print("   Skipped: Could not find schema type for v\(previousVersion)")
-                return
-            }
-
-            // Get discovered migration plan (or skip if none found)
-            if let migrationPlan = discovery.migrationPlans.first {
-                if discovery.migrationPlans.count > 1 {
-                    print("   ⚠️  Multiple migration plans found:")
-                    for plan in discovery.migrationPlans {
-                        print("      - \(plan.typeName)")
-                    }
-                    print("   Using: \(migrationPlan.typeName)")
-                }
-
-                migrationResult = try scaffolding.scaffoldMigrationTest(
-                    testsDir: testsDir,
-                    migrationPlan: migrationPlan.typeName,
-                    fromVersion: previousVersion,
-                    fromSchemaType: previousSchema.typeName,
-                    toVersion: version,
-                    toSchemaType: freezeAnnotation.typeName,
-                    appTarget: appTarget
-                )
-
-                if let result = migrationResult {
-                    if result.created {
-                        print("   Created: \(result.fileName)")
-                        createdTestFiles.append(result.fileName)
-                    } else {
-                        print("   Skipped: \(result.fileName) (already exists)")
-                    }
-                }
-            } else {
-                print("   Skipped: No SchemaMigrationPlan found")
-            }
-        }
-
-        // 9. Add scaffolded test files to Xcode test target (if Xcode project)
+        // 8. Add scaffolded test files to Xcode test target (if Xcode project)
         if projectPath.hasSuffix(".xcodeproj") {
             do {
                 // Add test files to sources
                 if !createdTestFiles.isEmpty {
-                    try addTestFilesToXcodeProject(
+                    try FreezeCommand.addTestFilesToXcodeProject(
                         projectPath: projectPath,
                         testTarget: testTarget,
                         testFiles: createdTestFiles,
@@ -201,7 +156,7 @@ struct FreezeCommand: ParsableCommand {
                 }
 
                 // Add fixtures folder as bundle resource (if not already added)
-                try addFixturesToTestTarget(
+                try FreezeCommand.addFixturesToTestTarget(
                     projectPath: projectPath,
                     testTarget: testTarget,
                     fixturesDir: fixturesDir.deletingLastPathComponent().deletingLastPathComponent() // FreezeRay folder
@@ -277,7 +232,7 @@ extension FreezeCommand {
 
     /// Generates a temporary test file that calls the macro-generated freeze function
     /// Returns the path to the generated test file
-    func generateFreezeTest(
+    public static func generateFreezeTest(
         workingDir: URL,
         testTarget: String,
         appTarget: String,
@@ -322,7 +277,7 @@ extension FreezeCommand {
     }
 
     /// Adds FreezeRay/Fixtures folder to the test target's resources build phase
-    func addFixturesToTestTarget(
+    public static func addFixturesToTestTarget(
         projectPath: String,
         testTarget: String,
         fixturesDir: URL
@@ -381,7 +336,7 @@ extension FreezeCommand {
     }
 
     /// Adds scaffolded test files to the Xcode test target's sources build phase
-    func addTestFilesToXcodeProject(
+    public static func addTestFilesToXcodeProject(
         projectPath: String,
         testTarget: String,
         testFiles: [String],
@@ -436,6 +391,21 @@ extension FreezeCommand {
 
         // Save modified project
         try xcodeproj.write(path: path)
+    }
+
+    /// Convenience overload that accepts URL array instead of String array
+    public static func addTestFilesToXcodeProject(
+        projectPath: String,
+        testTarget: String,
+        testFiles: [URL]
+    ) throws {
+        let fileNames = testFiles.map { $0.lastPathComponent }
+        try addTestFilesToXcodeProject(
+            projectPath: projectPath,
+            testTarget: testTarget,
+            testFiles: fileNames,
+            testsDir: testFiles.first?.deletingLastPathComponent() ?? URL(fileURLWithPath: "")
+        )
     }
 
 }

@@ -5,4 +5,550 @@ description: 'Step-by-step guide to freezing your first schema'
 
 # Your First Freeze
 
-Documentation coming soon.
+This tutorial walks you through freezing your first SwiftData schema with FreezeRay, from installation to verifying drift detection works.
+
+**Time required:** 10-15 minutes
+
+**What you'll learn:**
+- Install FreezeRay CLI and package
+- Add `@FreezeSchema` to your schema
+- Freeze a schema version
+- Run drift detection tests
+- Commit fixtures to git
+
+## Prerequisites
+
+Before starting, ensure you have:
+
+- **Xcode 15.0+** installed
+- **macOS 14+**
+- An **iOS 17+** app with SwiftData
+- **Git** for version control
+- **npm** (for CLI installation)
+- Your project uses `VersionedSchema` (not just plain `Schema`)
+
+<Info>
+If your app doesn't use `VersionedSchema` yet, you'll need to migrate to it first. See Apple's [SwiftData migration documentation](https://developer.apple.com/documentation/swiftdata/migrating-your-apps-schema).
+</Info>
+
+## Step 1: Install FreezeRay CLI
+
+Install the CLI via npm:
+
+```bash
+npm install -g @trinsicventures/freezeray
+```
+
+Verify installation:
+
+```bash
+freezeray --version
+# Should print: 0.4.3 (or later)
+```
+
+<Info>
+**Apple Silicon users:** The CLI includes pre-built binaries.
+
+**Intel Mac users:** The CLI will build from source automatically (requires Swift toolchain).
+</Info>
+
+## Step 2: Initialize FreezeRay in Your Project
+
+Navigate to your Xcode project directory:
+
+```bash
+cd /path/to/MyApp
+```
+
+Run the init command:
+
+```bash
+freezeray init
+```
+
+**What this does:**
+- Creates `FreezeRay/Fixtures/` and `FreezeRay/Tests/` directories
+- Adds FreezeRay Swift package to your project
+- Updates your Xcode project or `Package.swift`
+
+**Expected output:**
+```
+🔹 FreezeRay Init
+
+🔹 Detecting project type...
+   Type: Xcode Project
+
+🔹 Creating directory structure...
+   ✅ Created FreezeRay/Fixtures/
+   ✅ Created FreezeRay/Tests/
+
+🔹 Adding FreezeRay dependency...
+   ✅ Added FreezeRay package to Xcode project
+   ✅ Added FreezeRay/ folder to project navigator
+
+✅ FreezeRay initialized successfully!
+```
+
+## Step 3: Update Your Schema Definition
+
+Open your schema file (e.g., `Schemas.swift` or `DataModel.swift`) and import FreezeRay:
+
+```swift
+import SwiftData
+import FreezeRay  // Add this
+```
+
+Add `@FreezeSchema` to your schema:
+
+```swift
+@FreezeSchema(version: "1.0.0")  // Add this annotation
+enum AppSchemaV1: VersionedSchema {
+    static let versionIdentifier = Schema.Version(1, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [User.self]
+    }
+
+    @Model
+    final class User {
+        var name: String
+        var email: String
+
+        init(name: String, email: String) {
+            self.name = name
+            self.email = email
+        }
+    }
+}
+```
+
+<Info>
+The `@FreezeSchema(version:)` string ("1.0.0") is separate from SwiftData's `versionIdentifier`. Use it to organize your fixtures.
+</Info>
+
+**If you have multiple schema versions**, annotate each:
+
+```swift
+@FreezeSchema(version: "1.0.0")
+enum AppSchemaV1: VersionedSchema {
+    // ...
+}
+
+@FreezeSchema(version: "2.0.0")
+enum AppSchemaV2: VersionedSchema {
+    // ...
+}
+```
+
+## Step 4: Build Your Project
+
+Before freezing, ensure your project builds:
+
+```bash
+# Open in Xcode
+open MyApp.xcodeproj
+
+# Build: ⌘B
+# Or from command line:
+xcodebuild -scheme MyApp -destination 'platform=iOS Simulator,name=iPhone 17'
+```
+
+<Warning>
+If your project doesn't build, the freeze command will fail. Fix any build errors before continuing.
+</Warning>
+
+## Step 5: Freeze Your Schema
+
+Now freeze your schema version:
+
+```bash
+freezeray freeze 1.0.0
+```
+
+**What happens:**
+
+1. **Auto-detection** - Discovers project, scheme, and test target
+2. **Source parsing** - Finds `@FreezeSchema(version: "1.0.0")` in your code
+3. **Test generation** - Creates temporary test file
+4. **Simulator run** - Builds and runs in iOS Simulator
+5. **Fixture extraction** - Copies SQLite database from simulator
+6. **Test scaffolding** - Generates drift detection test
+
+**Expected output:**
+```
+🔹 FreezeRay v0.4.3
+🔹 Freezing schema version: 1.0.0
+
+🔹 Auto-detecting project configuration...
+   Found: MyApp.xcodeproj
+   Scheme: MyApp (auto-detected)
+   Test target: MyAppTests (inferred)
+
+🔹 Parsing source files for @Freeze(version: "1.0.0")...
+   Found: AppSchemaV1 in Schemas.swift
+
+🔹 Generating freeze test...
+   Generated: FreezeSchemaV1_0_0_Test.swift
+
+🔹 Building and running tests in simulator...
+   Simulator: iPhone 17
+   Running xcodebuild...
+   [Build logs...]
+   Test Suite 'FreezeSchemaV1_0_0_Test' passed
+
+🔹 Extracting fixtures from simulator...
+   Copied: App-1_0_0.sqlite → FreezeRay/Fixtures/1.0.0/
+   Copied: schema-1_0_0.json → FreezeRay/Fixtures/1.0.0/
+   Copied: schema-1_0_0.sql → FreezeRay/Fixtures/1.0.0/
+   Copied: schema-1_0_0.sha256 → FreezeRay/Fixtures/1.0.0/
+   Copied: export_metadata.txt → FreezeRay/Fixtures/1.0.0/
+
+🔹 Scaffolding drift test...
+   Created: AppSchemaV1_1_0_0_DriftTests.swift
+   ✅ Added test files to MyAppTests target
+   ✅ Added FreezeRay/Fixtures to test bundle resources
+
+✅ Schema v1.0.0 frozen successfully!
+
+📝 Next steps:
+   1. Review fixtures: FreezeRay/Fixtures/1.0.0
+   2. Customize drift test: FreezeRay/Tests/AppSchemaV1_1_0_0_DriftTests.swift
+   3. Run tests: xcodebuild test -scheme MyApp
+   4. Commit to git: git add FreezeRay/
+```
+
+<Info>
+The freeze process takes 30-60 seconds depending on your project's build time.
+</Info>
+
+## Step 6: Inspect the Fixtures
+
+Check what was created:
+
+```bash
+tree FreezeRay/
+```
+
+**Output:**
+```
+FreezeRay/
+├── Fixtures/
+│   └── 1.0.0/
+│       ├── App-1_0_0.sqlite         # Real SQLite database
+│       ├── schema-1_0_0.json        # Human-readable schema
+│       ├── schema-1_0_0.sql         # SQL DDL statements
+│       ├── schema-1_0_0.sha256      # Checksum
+│       └── export_metadata.txt      # Metadata
+└── Tests/
+    └── AppSchemaV1_1_0_0_DriftTests.swift  # Drift test
+```
+
+### Examine the SQLite database
+
+```bash
+sqlite3 FreezeRay/Fixtures/1.0.0/App-1_0_0.sqlite ".schema"
+```
+
+You'll see SwiftData's internal schema:
+
+```sql
+CREATE TABLE ZUSER (
+    Z_PK INTEGER PRIMARY KEY,
+    Z_ENT INTEGER,
+    Z_OPT INTEGER,
+    ZNAME VARCHAR,
+    ZEMAIL VARCHAR
+);
+CREATE TABLE Z_PRIMARYKEY (...);
+CREATE TABLE Z_METADATA (...);
+-- ... more SwiftData tables
+```
+
+This is the **actual schema** SwiftData created - not a theoretical representation.
+
+### Check the drift test
+
+Open `FreezeRay/Tests/AppSchemaV1_1_0_0_DriftTests.swift`:
+
+```swift
+// AUTO-GENERATED by FreezeRay CLI
+// This file is scaffolded once and owned by you. Customize as needed.
+
+import Testing
+import FreezeRay
+@testable import MyApp
+
+@Test("AppSchemaV1 v1.0.0 has not drifted")
+func testAppSchemaV1_1_0_0_Drift() throws {
+    // Verify frozen schema matches current definition
+    try AppSchemaV1.__freezeray_check_1_0_0()
+}
+```
+
+This test runs on every test execution and verifies your schema hasn't changed.
+
+## Step 7: Run Tests
+
+Run your test suite to verify drift detection works:
+
+```bash
+xcodebuild test -scheme MyApp -destination 'platform=iOS Simulator,name=iPhone 17'
+```
+
+Or in Xcode: **⌘U**
+
+**Expected result:** All tests pass, including the new drift test.
+
+<Info>
+The drift test should **always pass** immediately after freezing. If it fails, something went wrong during the freeze process.
+</Info>
+
+## Step 8: Verify Drift Detection Works
+
+Let's test that drift detection catches schema changes:
+
+1. **Modify your frozen schema** (temporarily):
+   ```swift
+   @FreezeSchema(version: "1.0.0")
+   enum AppSchemaV1: VersionedSchema {
+       static let versionIdentifier = Schema.Version(1, 0, 0)
+
+       static var models: [any PersistentModel.Type] {
+           [User.self, Post.self]  // ❌ Added Post (drift!)
+       }
+
+       // ... User definition unchanged ...
+
+       @Model
+       final class Post {  // New model
+           var title: String
+           init(title: String) { self.title = title }
+       }
+   }
+   ```
+
+2. **Run tests again:**
+   ```bash
+   xcodebuild test -scheme MyApp
+   ```
+
+3. **Observe the error:**
+   ```
+   ❌ Schema drift detected in sealed version 1.0.0
+
+   The sealed schema has changed since it was frozen.
+   Sealed schemas are immutable - create a new schema version instead.
+
+   Expected checksum: 0cc298858e409d8b9c7e37a7779af0e2
+   Actual checksum:   26d70c10e9febf7f8c5a9e3d4b2a1f0e
+   ```
+
+4. **Revert the change:**
+   ```swift
+   @FreezeSchema(version: "1.0.0")
+   enum AppSchemaV1: VersionedSchema {
+       static var models: [any PersistentModel.Type] {
+           [User.self]  // ✅ Back to original
+       }
+   }
+   ```
+
+5. **Tests pass again:**
+   ```bash
+   xcodebuild test -scheme MyApp
+   # ✅ All tests pass
+   ```
+
+**Success!** Drift detection is working.
+
+## Step 9: Commit to Git
+
+Commit the fixtures and tests to version control:
+
+```bash
+git add FreezeRay/
+git add Schemas.swift  # (or wherever you added @FreezeSchema)
+git commit -m "Freeze schema v1.0.0"
+git push
+```
+
+<Warning>
+**Always commit fixtures immediately after freezing.** They must be in git for:
+- CI/CD to run drift tests
+- Team members to have the same fixtures
+- Traceability (which commit introduced the schema)
+</Warning>
+
+## Step 10: Team Workflow
+
+When other developers pull your changes:
+
+```bash
+git pull origin main
+```
+
+They automatically get:
+- The frozen fixtures (`FreezeRay/Fixtures/1.0.0/`)
+- The drift test (`FreezeRay/Tests/AppSchemaV1_1_0_0_DriftTests.swift`)
+
+When they run tests (`⌘U`), drift detection verifies they haven't accidentally modified the frozen schema.
+
+## What's Next?
+
+You've successfully frozen your first schema! Here's what to do next:
+
+### Add a Second Schema Version
+
+When you need to make schema changes:
+
+1. **Create a new schema version:**
+   ```swift
+   @FreezeSchema(version: "2.0.0")
+   enum AppSchemaV2: VersionedSchema {
+       static let versionIdentifier = Schema.Version(2, 0, 0)
+
+       static var models: [any PersistentModel.Type] {
+           [User.self, Post.self]  // Now includes Post
+       }
+
+       // ... models ...
+   }
+   ```
+
+2. **Add migration:**
+   ```swift
+   enum AppMigrations: SchemaMigrationPlan {
+       static var schemas: [any VersionedSchema.Type] {
+           [AppSchemaV1.self, AppSchemaV2.self]
+       }
+
+       static var stages: [MigrationStage] {
+           [migrateV1toV2]
+       }
+
+       static let migrateV1toV2 = MigrationStage.lightweight(
+           fromVersion: AppSchemaV1.self,
+           toVersion: AppSchemaV2.self
+       )
+   }
+   ```
+
+3. **Freeze the new version:**
+   ```bash
+   freezeray freeze 2.0.0
+   ```
+
+FreezeRay will automatically scaffold a migration test: `MigrateV1_0_0toV2_0_0_Tests.swift`
+
+### Set Up CI Integration
+
+Add FreezeRay to your CI pipeline to catch drift on every PR:
+
+```yaml
+# .github/workflows/test.yml
+- name: Run Tests
+  run: |
+    xcodebuild test \
+      -scheme MyApp \
+      -destination 'platform=iOS Simulator,name=iPhone 17'
+```
+
+See the [CI Integration guide](/guides/ci-integration) for full setup.
+
+### Customize Tests
+
+Add custom validation to drift and migration tests:
+
+```swift
+@Test("AppSchemaV1 v1.0.0 has not drifted")
+func testAppSchemaV1_1_0_0_Drift() throws {
+    try AppSchemaV1.__freezeray_check_1_0_0()
+
+    // ✅ Add custom checks
+    // For example: verify certain models exist
+}
+```
+
+See the [Testing Migrations guide](/guides/testing-migrations) for examples.
+
+## Troubleshooting
+
+### "No @Freeze(version: "1.0.0") annotation found"
+
+**Problem:** You forgot to add `@FreezeSchema` to your schema.
+
+**Solution:**
+```swift
+@FreezeSchema(version: "1.0.0")  // ← Add this
+enum AppSchemaV1: VersionedSchema {
+    // ...
+}
+```
+
+### "Build failed"
+
+**Problem:** Your project doesn't compile.
+
+**Solution:** Fix build errors in Xcode (⌘B) before running `freezeray freeze`.
+
+### "Test failed"
+
+**Problem:** Your existing tests are failing.
+
+**Solution:** Fix failing tests before freezing. The freeze command requires all tests to pass.
+
+### "Simulator not found: iPhone 17"
+
+**Problem:** You don't have iPhone 17 simulator installed.
+
+**Solution:**
+
+Option 1 - Install iPhone 17 simulator:
+```bash
+xcrun simctl list devices
+# If iPhone 17 is not listed, install it via Xcode settings
+```
+
+Option 2 - Use a different simulator:
+```bash
+freezeray freeze 1.0.0 --simulator "iPhone 15"
+```
+
+### Drift test fails immediately after freezing
+
+**Problem:** Something went wrong during the freeze.
+
+**Solution:**
+
+1. Delete fixtures: `rm -rf FreezeRay/Fixtures/1.0.0/`
+2. Freeze again: `freezeray freeze 1.0.0`
+3. If it still fails, file a bug report at [github.com/TrinsicVentures/FreezeRayCLI/issues](https://github.com/TrinsicVentures/FreezeRayCLI/issues)
+
+## Summary
+
+You've learned how to:
+
+- ✅ Install FreezeRay CLI and initialize your project
+- ✅ Annotate schemas with `@FreezeSchema(version:)`
+- ✅ Freeze a schema version to create immutable fixtures
+- ✅ Run drift detection tests
+- ✅ Commit fixtures to version control
+
+Your schema is now **frozen** and protected from accidental changes!
+
+## Next Steps
+
+<Columns cols={2}>
+  <Card title="Migration Testing" icon="code-branch" href="/guides/testing-migrations">
+    Learn how to test migrations between schema versions
+  </Card>
+  <Card title="CI Integration" icon="github" href="/guides/ci-integration">
+    Set up drift detection in your CI pipeline
+  </Card>
+  <Card title="Schema Freezing Concepts" icon="snowflake" href="/concepts/schema-freezing">
+    Deep dive into how schema freezing works
+  </Card>
+  <Card title="Drift Detection Concepts" icon="triangle-exclamation" href="/concepts/drift-detection">
+    Understand how checksums catch schema changes
+  </Card>
+</Columns>

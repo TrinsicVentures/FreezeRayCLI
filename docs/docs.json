@@ -37,7 +37,8 @@
             "group": "CLI Reference",
             "pages": [
               "cli/init",
-              "cli/freeze"
+              "cli/freeze",
+              "cli/generate"
             ]
           },
           {
