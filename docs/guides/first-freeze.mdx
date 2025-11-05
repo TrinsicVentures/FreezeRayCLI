@@ -415,7 +415,14 @@ When you need to make schema changes:
    }
    ```
 
-2. **Add migration:**
+2. **Generate migration test:**
+   ```bash
+   freezeray generate migration-tests --from-schema 1.0.0 --to-schema 2.0.0
+   ```
+
+   This creates `MigrateV1_0_0toV2_0_0_Tests.swift`. Edit it to add custom data validation.
+
+3. **Add migration:**
    ```swift
    enum AppMigrations: SchemaMigrationPlan {
        static var schemas: [any VersionedSchema.Type] {
@@ -433,12 +440,14 @@ When you need to make schema changes:
    }
    ```
 
-3. **Freeze the new version:**
+4. **Develop and test:** Run tests (⌘U) as you implement the schema and migration.
+
+5. **Freeze the new version:**
    ```bash
    freezeray freeze 2.0.0
    ```
 
-FreezeRay will automatically scaffold a migration test: `MigrateV1_0_0toV2_0_0_Tests.swift`
+   This generates fixtures and drift test only. The migration test already exists from step 2.
 
 ### Set Up CI Integration
 
