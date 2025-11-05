@@ -28,7 +28,7 @@ struct FreezeCommand: ParsableCommand {
     var output: String?
 
     func run() throws {
-        print("🔹 FreezeRay v0.4.3")
+        print("🔹 FreezeRay v0.5.0")
         print("🔹 Freezing schema version: \(version)")
         print("")
 

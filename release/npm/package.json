@@ -1,6 +1,6 @@
 {
   "name": "@trinsicventures/freezeray",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "description": "CLI tool for freezing SwiftData schemas and validating migration paths",
   "bin": {
     "freezeray": "./bin/freezeray"
